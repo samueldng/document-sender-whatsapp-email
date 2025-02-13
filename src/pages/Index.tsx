@@ -90,6 +90,15 @@ export default function Index() {
           throw new Error('Failed to upload document');
         }
 
+        // Get public URL for the file
+        const { data: { publicUrl }, error: urlError } = await supabase.storage
+          .from('documents')
+          .getPublicUrl(uploadResponse.data.filePath);
+
+        if (urlError) {
+          throw new Error('Failed to get file URL');
+        }
+
         // Send via selected method
         if (method === "email") {
           const sendResponse = await supabase.functions.invoke('send-document', {
@@ -105,17 +114,24 @@ export default function Index() {
             throw new Error('Failed to send email');
           }
         } else if (method === "whatsapp") {
-          // WhatsApp sending will be implemented in the next step
-          toast({
-            title: "Em breve",
-            description: "Envio por WhatsApp será implementado em breve",
+          const sendResponse = await supabase.functions.invoke('send-whatsapp', {
+            body: {
+              clientPhone: selectedClient.whatsapp,
+              clientName: selectedClient.name,
+              documentType,
+              publicUrl,
+            },
           });
+
+          if (!sendResponse.data) {
+            throw new Error('Failed to send WhatsApp message');
+          }
         }
       }
 
       toast({
         title: "Sucesso",
-        description: `${files.length} documento(s) ${method === 'email' ? 'enviado(s) por email' : 'preparado(s) para WhatsApp'}`,
+        description: `${files.length} documento(s) ${method === 'email' ? 'enviado(s) por email' : 'enviado(s) por WhatsApp'}`,
       });
 
       // Reset state after successful upload and send
