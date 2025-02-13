@@ -74,35 +74,58 @@ export default function Index() {
     setIsLoading(true);
 
     try {
-      // Upload each file
+      // Upload files and send them
       for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('clientId', selectedClient.id);
         formData.append('documentType', documentType);
 
-        const response = await supabase.functions.invoke('upload-document', {
+        // Upload file
+        const uploadResponse = await supabase.functions.invoke('upload-document', {
           body: formData,
         });
 
-        if (!response.data) {
+        if (!uploadResponse.data) {
           throw new Error('Failed to upload document');
+        }
+
+        // Send via selected method
+        if (method === "email") {
+          const sendResponse = await supabase.functions.invoke('send-document', {
+            body: {
+              clientEmail: selectedClient.email,
+              clientName: selectedClient.name,
+              documentType,
+              filePath: uploadResponse.data.filePath,
+            },
+          });
+
+          if (!sendResponse.data) {
+            throw new Error('Failed to send email');
+          }
+        } else if (method === "whatsapp") {
+          // WhatsApp sending will be implemented in the next step
+          toast({
+            title: "Em breve",
+            description: "Envio por WhatsApp será implementado em breve",
+          });
         }
       }
 
       toast({
         title: "Sucesso",
-        description: `${files.length} documento(s) enviado(s) com sucesso`,
+        description: `${files.length} documento(s) ${method === 'email' ? 'enviado(s) por email' : 'preparado(s) para WhatsApp'}`,
       });
 
-      // Reset state after successful upload
+      // Reset state after successful upload and send
       setFiles(null);
       setSelectedClient(null);
     } catch (error) {
-      console.error('Error uploading documents:', error);
+      console.error('Error handling documents:', error);
       toast({
         title: "Erro",
-        description: "Erro ao enviar documentos",
+        description: `Erro ao ${method === 'email' ? 'enviar email' : 'enviar WhatsApp'}`,
         variant: "destructive",
       });
     } finally {
