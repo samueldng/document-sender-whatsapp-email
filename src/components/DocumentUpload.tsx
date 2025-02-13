@@ -49,8 +49,8 @@ export default function DocumentUpload({
       >
         <UploadIcon className="h-12 w-12 text-gray-400" />
         <span className="text-sm text-gray-600">
-          Drag and drop your {documentType === "invoice" ? "invoices" : "tax documents"} here, or
-          click to select files
+          Arraste e solte seus {documentType === "invoice" ? "notas fiscais" : "documentos fiscais"} aqui, ou
+          clique para selecionar arquivos
         </span>
         <input
           id="file-upload"
@@ -60,7 +60,7 @@ export default function DocumentUpload({
           onChange={(e) => e.target.files && onUpload(e.target.files)}
         />
         <Button type="button" variant="secondary" className="mt-2">
-          Select Files
+          Selecionar Arquivos
         </Button>
       </Label>
     </div>

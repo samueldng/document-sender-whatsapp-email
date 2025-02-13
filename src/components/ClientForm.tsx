@@ -23,8 +23,8 @@ export default function ClientForm({ onSave }: { onSave: (client: Client) => voi
     };
     onSave(newClient);
     toast({
-      title: "Success",
-      description: "Client successfully registered",
+      title: "Sucesso",
+      description: "Cliente cadastrado com sucesso",
     });
     setFormData({ name: "", email: "", whatsapp: "" });
   };
@@ -32,13 +32,14 @@ export default function ClientForm({ onSave }: { onSave: (client: Client) => voi
   return (
     <form onSubmit={handleSubmit} className="space-y-4 animate-fadeIn">
       <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
+        <Label htmlFor="name">Nome</Label>
         <Input
           id="name"
           required
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           className="w-full"
+          placeholder="Digite o nome do cliente"
         />
       </div>
       <div className="space-y-2">
@@ -50,6 +51,7 @@ export default function ClientForm({ onSave }: { onSave: (client: Client) => voi
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           className="w-full"
+          placeholder="Digite o email do cliente"
         />
       </div>
       <div className="space-y-2">
@@ -60,10 +62,11 @@ export default function ClientForm({ onSave }: { onSave: (client: Client) => voi
           value={formData.whatsapp}
           onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
           className="w-full"
+          placeholder="Digite o número do WhatsApp"
         />
       </div>
       <Button type="submit" className="w-full">
-        Register Client
+        Cadastrar Cliente
       </Button>
     </form>
   );

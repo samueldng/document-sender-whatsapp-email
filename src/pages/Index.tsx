@@ -24,42 +24,40 @@ export default function Index() {
   const handleUpload = (files: FileList) => {
     setFiles(files);
     toast({
-      title: "Files Selected",
-      description: `${files.length} files ready to be sent`,
+      title: "Arquivos Selecionados",
+      description: `${files.length} arquivos prontos para envio`,
     });
   };
 
   const handleSend = async (method: "email" | "whatsapp") => {
     if (!selectedClient || !files) {
       toast({
-        title: "Error",
-        description: "Please select a client and files first",
+        title: "Erro",
+        description: "Por favor, selecione um cliente e arquivos primeiro",
         variant: "destructive",
       });
       return;
     }
 
-    // Simulate sending (in a real app, this would connect to a backend service)
     toast({
-      title: "Sending documents",
-      description: `Sending ${files.length} documents to ${selectedClient.name} via ${method}`,
+      title: "Enviando documentos",
+      description: `Enviando ${files.length} documentos para ${selectedClient.name} via ${method}`,
     });
 
-    // Reset selection after sending
     setFiles(null);
     setSelectedClient(null);
   };
 
   return (
     <div className="container mx-auto max-w-5xl py-8">
-      <h1 className="mb-8 text-center text-4xl font-bold">Document Sender</h1>
+      <h1 className="mb-8 text-center text-4xl font-bold">Enviador de Documentos</h1>
       
       <div className="grid gap-8 md:grid-cols-2">
         <Card className="p-6">
           <Tabs defaultValue="register" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="register">Register Client</TabsTrigger>
-              <TabsTrigger value="select">Select Client</TabsTrigger>
+              <TabsTrigger value="register">Cadastrar Cliente</TabsTrigger>
+              <TabsTrigger value="select">Selecionar Cliente</TabsTrigger>
             </TabsList>
             <TabsContent value="register">
               <ClientForm onSave={handleClientSave} />
@@ -71,32 +69,32 @@ export default function Index() {
         </Card>
 
         <Card className="p-6">
-          <h2 className="mb-4 text-xl font-semibold">Send Documents</h2>
+          <h2 className="mb-4 text-xl font-semibold">Enviar Documentos</h2>
           
           {selectedClient ? (
             <div className="animate-fadeIn space-y-4">
               <div className="rounded-lg bg-secondary p-4">
-                <p className="font-medium">Selected Client:</p>
+                <p className="font-medium">Cliente Selecionado:</p>
                 <p>{selectedClient.name}</p>
                 <p className="text-sm text-gray-600">{selectedClient.email}</p>
               </div>
 
               <div className="space-y-2">
-                <p className="font-medium">Document Type:</p>
+                <p className="font-medium">Tipo de Documento:</p>
                 <div className="flex gap-2">
                   <Button
                     variant={documentType === "invoice" ? "default" : "outline"}
                     onClick={() => setDocumentType("invoice")}
                   >
                     <FileIcon className="mr-2 h-4 w-4" />
-                    Invoices
+                    Notas Fiscais
                   </Button>
                   <Button
                     variant={documentType === "tax" ? "default" : "outline"}
                     onClick={() => setDocumentType("tax")}
                   >
                     <FileIcon className="mr-2 h-4 w-4" />
-                    Tax Documents
+                    Documentos Fiscais
                   </Button>
                 </div>
               </div>
@@ -111,14 +109,14 @@ export default function Index() {
                       onClick={() => handleSend("email")}
                     >
                       <MailIcon className="mr-2 h-4 w-4" />
-                      Send via Email
+                      Enviar por Email
                     </Button>
                     <Button
                       className="flex-1"
                       onClick={() => handleSend("whatsapp")}
                     >
                       <MessageSquare className="mr-2 h-4 w-4" />
-                      Send via WhatsApp
+                      Enviar por WhatsApp
                     </Button>
                   </div>
                 </div>
@@ -126,7 +124,7 @@ export default function Index() {
             </div>
           ) : (
             <div className="flex h-[400px] items-center justify-center text-gray-500">
-              Please select a client to send documents
+              Por favor, selecione um cliente para enviar documentos
             </div>
           )}
         </Card>
