@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Client, DocumentType } from "@/types/client";
 import ClientForm from "@/components/ClientForm";
 import ClientList from "@/components/ClientList";
@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MailIcon, FileIcon, MessageSquare } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Index() {
   const { toast } = useToast();
@@ -16,9 +17,40 @@ export default function Index() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [documentType, setDocumentType] = useState<DocumentType>("invoice");
   const [files, setFiles] = useState<FileList | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    loadClients();
+  }, []);
+
+  const loadClients = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setClients(data.map(client => ({
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        whatsapp: client.whatsapp,
+        createdAt: new Date(client.created_at),
+      })));
+    } catch (error) {
+      console.error('Error loading clients:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar clientes",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleClientSave = (client: Client) => {
-    setClients([...clients, client]);
+    setClients([client, ...clients]);
   };
 
   const handleUpload = (files: FileList) => {
@@ -39,13 +71,43 @@ export default function Index() {
       return;
     }
 
-    toast({
-      title: "Enviando documentos",
-      description: `Enviando ${files.length} documentos para ${selectedClient.name} via ${method}`,
-    });
+    setIsLoading(true);
 
-    setFiles(null);
-    setSelectedClient(null);
+    try {
+      // Upload each file
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('clientId', selectedClient.id);
+        formData.append('documentType', documentType);
+
+        const response = await supabase.functions.invoke('upload-document', {
+          body: formData,
+        });
+
+        if (!response.data) {
+          throw new Error('Failed to upload document');
+        }
+      }
+
+      toast({
+        title: "Sucesso",
+        description: `${files.length} documento(s) enviado(s) com sucesso`,
+      });
+
+      // Reset state after successful upload
+      setFiles(null);
+      setSelectedClient(null);
+    } catch (error) {
+      console.error('Error uploading documents:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao enviar documentos",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -107,6 +169,7 @@ export default function Index() {
                     <Button
                       className="flex-1"
                       onClick={() => handleSend("email")}
+                      disabled={isLoading}
                     >
                       <MailIcon className="mr-2 h-4 w-4" />
                       Enviar por Email
@@ -114,6 +177,7 @@ export default function Index() {
                     <Button
                       className="flex-1"
                       onClick={() => handleSend("whatsapp")}
+                      disabled={isLoading}
                     >
                       <MessageSquare className="mr-2 h-4 w-4" />
                       Enviar por WhatsApp

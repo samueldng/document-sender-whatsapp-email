@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Client } from "@/types/client";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function ClientForm({ onSave }: { onSave: (client: Client) => void }) {
   const { toast } = useToast();
@@ -14,19 +15,42 @@ export default function ClientForm({ onSave }: { onSave: (client: Client) => voi
     whatsapp: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newClient: Client = {
-      id: Date.now().toString(),
-      ...formData,
-      createdAt: new Date(),
-    };
-    onSave(newClient);
-    toast({
-      title: "Sucesso",
-      description: "Cliente cadastrado com sucesso",
-    });
-    setFormData({ name: "", email: "", whatsapp: "" });
+    
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .insert({
+          name: formData.name,
+          email: formData.email,
+          whatsapp: formData.whatsapp,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const newClient: Client = {
+        id: data.id,
+        ...formData,
+        createdAt: new Date(data.created_at),
+      };
+
+      onSave(newClient);
+      toast({
+        title: "Sucesso",
+        description: "Cliente cadastrado com sucesso",
+      });
+      setFormData({ name: "", email: "", whatsapp: "" });
+    } catch (error) {
+      console.error('Error saving client:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao cadastrar cliente",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

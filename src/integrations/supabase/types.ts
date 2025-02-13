@@ -9,7 +9,65 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      clients: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          name: string
+          whatsapp: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          whatsapp: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          whatsapp?: string
+        }
+        Relationships: []
+      }
+      documents: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          document_type: string
+          file_path: string
+          filename: string
+          id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          document_type: string
+          file_path: string
+          filename: string
+          id?: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          document_type?: string
+          file_path?: string
+          filename?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
