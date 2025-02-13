@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MailIcon, FileIcon, WhatsappIcon } from "lucide-react";
+import { MailIcon, FileIcon, MessageSquare } from "lucide-react";
 
 export default function Index() {
   const { toast } = useToast();
@@ -117,7 +117,7 @@ export default function Index() {
                       className="flex-1"
                       onClick={() => handleSend("whatsapp")}
                     >
-                      <WhatsappIcon className="mr-2 h-4 w-4" />
+                      <MessageSquare className="mr-2 h-4 w-4" />
                       Send via WhatsApp
                     </Button>
                   </div>
