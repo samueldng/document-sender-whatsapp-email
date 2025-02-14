@@ -18,9 +18,9 @@ serve(async (req) => {
     // Format phone number (remove any non-numeric characters)
     let formattedPhone = clientPhone.replace(/\D/g, '')
     
-    // Add country code if not present (assuming Brazil)
-    if (!formattedPhone.startsWith('55')) {
-      formattedPhone = `55${formattedPhone}`
+    // For US numbers, make sure it starts with "1"
+    if (!formattedPhone.startsWith('1')) {
+      formattedPhone = `1${formattedPhone}`
     }
     
     console.log('Sending WhatsApp message to:', formattedPhone)
