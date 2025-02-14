@@ -91,11 +91,11 @@ export default function Index() {
         }
 
         // Get public URL for the file
-        const { data: { publicUrl }, error: urlError } = await supabase.storage
+        const { data } = await supabase.storage
           .from('documents')
           .getPublicUrl(uploadResponse.data.filePath);
 
-        if (urlError) {
+        if (!data.publicUrl) {
           throw new Error('Failed to get file URL');
         }
 
@@ -119,7 +119,7 @@ export default function Index() {
               clientPhone: selectedClient.whatsapp,
               clientName: selectedClient.name,
               documentType,
-              publicUrl,
+              publicUrl: data.publicUrl,
             },
           });
 

@@ -7,6 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -14,8 +15,15 @@ serve(async (req) => {
   try {
     const { clientPhone, clientName, documentType, publicUrl } = await req.json()
 
-    // Format phone number (remove any non-numeric characters and add country code if needed)
-    const formattedPhone = clientPhone.replace(/\D/g, '')
+    // Format phone number (remove any non-numeric characters)
+    let formattedPhone = clientPhone.replace(/\D/g, '')
+    
+    // Add country code if not present (assuming Brazil)
+    if (!formattedPhone.startsWith('55')) {
+      formattedPhone = `55${formattedPhone}`
+    }
+    
+    console.log('Sending WhatsApp message to:', formattedPhone)
     
     const message = `Olá ${clientName}!\n\n` +
       `Aqui estão seus ${documentType === 'invoice' ? 'Notas Fiscais' : 'Documentos Fiscais'} conforme solicitado.\n\n` +
@@ -23,8 +31,12 @@ serve(async (req) => {
       `Se você tiver alguma dúvida, por favor nos contate.\n\n` +
       `Atenciosamente,\nSua Empresa`
 
+    const phoneNumberId = '171881232733760' // Substitua pelo seu Phone Number ID
+    
+    console.log('Using WhatsApp API with token:', Deno.env.get('WHATSAPP_TOKEN') ? 'Token present' : 'Token missing')
+    
     const response = await fetch(
-      `https://graph.facebook.com/v17.0/YOUR_PHONE_NUMBER_ID/messages`,
+      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -42,23 +54,22 @@ serve(async (req) => {
       }
     )
 
+    const responseData = await response.json()
+    console.log('WhatsApp API response:', responseData)
+
     if (!response.ok) {
-      const error = await response.json()
-      console.error('WhatsApp API error:', error)
-      throw new Error('Failed to send WhatsApp message')
+      console.error('WhatsApp API error:', responseData)
+      throw new Error(responseData.error?.message || 'Failed to send WhatsApp message')
     }
 
-    const result = await response.json()
-    console.log('WhatsApp message sent successfully:', result)
-
     return new Response(
-      JSON.stringify({ message: 'WhatsApp message sent successfully' }),
+      JSON.stringify({ message: 'WhatsApp message sent successfully', data: responseData }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
     console.error('Error sending WhatsApp message:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || 'Internal server error' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
