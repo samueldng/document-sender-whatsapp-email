@@ -31,8 +31,12 @@ serve(async (req) => {
       `Se você tiver alguma dúvida, por favor nos contate.\n\n` +
       `Atenciosamente,\nSua Empresa`
 
-    const phoneNumberId = '171881232733760' // Seu Phone Number ID do WhatsApp Business
+    const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_ID')
+    if (!phoneNumberId) {
+      throw new Error('WhatsApp Phone Number ID not configured')
+    }
     
+    console.log('Using WhatsApp Phone ID:', phoneNumberId)
     console.log('Using WhatsApp API with token:', Deno.env.get('WHATSAPP_TOKEN') ? 'Token present' : 'Token missing')
     
     const response = await fetch(
