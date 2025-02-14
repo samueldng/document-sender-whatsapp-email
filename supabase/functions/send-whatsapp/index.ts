@@ -31,7 +31,7 @@ serve(async (req) => {
       `Se você tiver alguma dúvida, por favor nos contate.\n\n` +
       `Atenciosamente,\nSua Empresa`
 
-    const phoneNumberId = '171881232733760' // Substitua pelo seu Phone Number ID
+    const phoneNumberId = '171881232733760' // Seu Phone Number ID do WhatsApp Business
     
     console.log('Using WhatsApp API with token:', Deno.env.get('WHATSAPP_TOKEN') ? 'Token present' : 'Token missing')
     
