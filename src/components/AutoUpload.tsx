@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -115,11 +114,10 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
           
           formData.append('documentType', documentType);
 
-          // Chamar a edge function para upload com timeout maior
+          // Chamar a edge function para upload sem a propriedade timeout inválida
           console.log("Enviando arquivo para a edge function upload-auto");
           const response = await supabase.functions.invoke('upload-auto', {
             body: formData,
-            timeout: 60000, // 60 segundos de timeout
           });
 
           if (response.error) {
