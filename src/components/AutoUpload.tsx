@@ -44,41 +44,14 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     try {
       console.log("Carregando arquivos...");
       
-      // Verificar se há arquivos no bucket que correspondem ao cliente e tipo de documento
-      const filePrefixByDocType = selectedClient ? 
-        `client_${selectedClient.id}/${documentType}/` : 
-        documentType === "invoice" ? "invoice/" : "tax/";
-        
-      console.log("Buscando arquivos com prefixo:", filePrefixByDocType);
-      
-      // Primeiro, buscar arquivos no storage
-      const { data: storageFiles, error: storageError } = await supabase.storage
-        .from('documents')
-        .list(filePrefixByDocType.split('/')[0], {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: 'created_at', order: 'desc' }
-        });
-        
-      if (storageError) {
-        console.error("Erro ao buscar arquivos no storage:", storageError);
-        throw storageError;
-      }
-      
-      console.log(`Encontrados ${storageFiles?.length || 0} arquivos no storage`);
-      
-      // Depois buscar documentos da tabela documents para verificar quais já estão indexados
+      // Buscar todos os documentos do tipo especificado, independente do cliente
       const query = supabase
         .from('documents')
         .select('*')
-        .eq('document_type', documentType);
+        .eq('document_type', documentType)
+        .order('created_at', { ascending: false });
       
-      // Adicionar filtro de cliente se um cliente estiver selecionado
-      if (selectedClient) {
-        query.eq('client_id', selectedClient.id);
-      }
-      
-      const { data: dbDocs, error: dbError } = await query.order('created_at', { ascending: false });
+      const { data: dbDocs, error: dbError } = await query;
       
       if (dbError) {
         console.error("Erro ao consultar tabela documents:", dbError);
@@ -87,51 +60,111 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
       
       console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
       
-      // Mapear os arquivos do storage para exibição
-      if (storageFiles && storageFiles.length > 0) {
-        // Filtrar apenas os arquivos relevantes (arquivos, não diretórios)
-        const relevantFiles = storageFiles.filter(file => !file.metadata);
+      // Verificar se há arquivos no bucket do tipo de documento especificado
+      const rootFolder = documentType === "invoice" ? "invoice" : "tax";
+      
+      // Listar todos os arquivos na pasta raiz do tipo de documento
+      const { data: rootFiles, error: rootError } = await supabase.storage
+        .from('documents')
+        .list(rootFolder, {
+          limit: 100,
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
         
-        const filesWithUrls = await Promise.all(relevantFiles.map(async (file) => {
-          const filePath = `${filePrefixByDocType.split('/')[0]}/${file.name}`;
-          
-          // Verificar se este arquivo já está na tabela documents
-          const existingDoc = dbDocs?.find(doc => doc.file_path === filePath);
-          
-          const { data: urlData } = await supabase.storage
-            .from('documents')
-            .getPublicUrl(filePath);
-            
-          // Se o arquivo ainda não estiver indexado na tabela documents, vamos indexá-lo
-          if (!existingDoc) {
-            console.log(`Indexando arquivo ${file.name} na tabela documents`);
-            
-            const { error: insertError } = await supabase
+      if (rootError) {
+        console.error("Erro ao buscar arquivos na pasta raiz:", rootError);
+        // Continuar mesmo com erro, pois podemos ter arquivos em pastas de clientes
+      }
+      
+      // Para cada cliente, listar seus arquivos do tipo especificado
+      const { data: clients, error: clientsError } = await supabase
+        .from('clients')
+        .select('id');
+        
+      if (clientsError) {
+        console.error("Erro ao buscar clientes:", clientsError);
+        // Continuar mesmo com erro
+      }
+      
+      let allStorageFiles: any[] = rootFiles || [];
+      
+      // Buscar arquivos de todos os clientes
+      if (clients && clients.length > 0) {
+        for (const client of clients) {
+          const clientFolder = `client_${client.id}/${documentType}`;
+          try {
+            const { data: clientFiles, error: clientFilesError } = await supabase.storage
               .from('documents')
-              .insert({
-                client_id: selectedClient?.id || null,
-                document_type: documentType,
-                file_path: filePath,
-                filename: file.name
+              .list(clientFolder.split('/')[0], {
+                limit: 100,
+                sortBy: { column: 'created_at', order: 'desc' }
               });
               
-            if (insertError) {
-              console.error(`Erro ao indexar arquivo ${file.name}:`, insertError);
+            if (!clientFilesError && clientFiles && clientFiles.length > 0) {
+              // Adicionar informação do cliente a cada arquivo
+              const clientEnrichedFiles = clientFiles.map(file => ({
+                ...file,
+                clientId: client.id,
+                clientFolder: clientFolder.split('/')[0]
+              }));
+              allStorageFiles = [...allStorageFiles, ...clientEnrichedFiles];
             }
+          } catch (e) {
+            console.error(`Erro ao buscar arquivos do cliente ${client.id}:`, e);
+            // Continuar para o próximo cliente
           }
-          
-          return {
-            name: file.name,
-            path: filePath,
-            url: urlData.publicUrl,
-            created_at: file.created_at || new Date().toISOString()
-          };
-        }));
-        
-        setUploadedFiles(filesWithUrls);
-      } else {
-        setUploadedFiles([]);
+        }
       }
+      
+      // Remover diretórios (itens com metadata)
+      const relevantFiles = allStorageFiles.filter(file => !file.metadata);
+      
+      console.log(`Encontrados ${relevantFiles.length} arquivos relevantes no storage`);
+      
+      // Mapear os arquivos do storage para exibição e indexá-los se necessário
+      const filesWithUrls = await Promise.all(relevantFiles.map(async (file) => {
+        // Determinar o caminho do arquivo
+        const folderPrefix = file.clientFolder || rootFolder;
+        const filePath = `${folderPrefix}/${file.name}`;
+        
+        // Verificar se este arquivo já está na tabela documents
+        const existingDoc = dbDocs?.find(doc => doc.file_path === filePath);
+        
+        // Obter URL pública
+        const { data: urlData } = await supabase.storage
+          .from('documents')
+          .getPublicUrl(filePath);
+          
+        // Se o arquivo ainda não estiver indexado na tabela documents, vamos indexá-lo
+        if (!existingDoc) {
+          console.log(`Indexando arquivo ${file.name} na tabela documents`);
+          
+          const { error: insertError } = await supabase
+            .from('documents')
+            .insert({
+              client_id: file.clientId || null,
+              document_type: documentType,
+              file_path: filePath,
+              filename: file.name // Preservar o nome original do arquivo
+            });
+            
+          if (insertError) {
+            console.error(`Erro ao indexar arquivo ${file.name}:`, insertError);
+          }
+        }
+        
+        return {
+          name: file.name, // Nome original preservado
+          path: filePath,
+          url: urlData.publicUrl,
+          created_at: file.created_at || existingDoc?.created_at || new Date().toISOString()
+        };
+      }));
+      
+      // Ordenar arquivos por data de criação (mais recentes primeiro)
+      filesWithUrls.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      setUploadedFiles(filesWithUrls);
     } catch (error) {
       console.error('Erro ao carregar arquivos:', error);
       toast({
@@ -163,8 +196,9 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
           }
           
           formData.append('documentType', documentType);
+          formData.append('originalFilename', file.name); // Adicionar nome original do arquivo
 
-          // Chamar a edge function para upload sem a propriedade timeout inválida
+          // Chamar a edge function para upload
           console.log("Enviando arquivo para a edge function upload-auto");
           const response = await supabase.functions.invoke('upload-auto', {
             body: formData,
