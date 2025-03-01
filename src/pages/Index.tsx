@@ -4,11 +4,12 @@ import { Client, DocumentType } from "@/types/client";
 import ClientForm from "@/components/ClientForm";
 import ClientList from "@/components/ClientList";
 import DocumentUpload from "@/components/DocumentUpload";
+import AutoUpload from "@/components/AutoUpload";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MailIcon, FileIcon, MessageSquare } from "lucide-react";
+import { MailIcon, FileIcon, MessageSquare, UploadIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Index() {
@@ -18,6 +19,7 @@ export default function Index() {
   const [documentType, setDocumentType] = useState<DocumentType>("invoice");
   const [files, setFiles] = useState<FileList | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("manual");
 
   useEffect(() => {
     loadClients();
@@ -200,30 +202,41 @@ export default function Index() {
                 </div>
               </div>
 
-              <DocumentUpload documentType={documentType} onUpload={handleUpload} />
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="manual">Upload Manual</TabsTrigger>
+                  <TabsTrigger value="auto">Upload Automático</TabsTrigger>
+                </TabsList>
+                <TabsContent value="manual">
+                  <DocumentUpload documentType={documentType} onUpload={handleUpload} />
 
-              {files && (
-                <div className="space-y-4 animate-fadeIn">
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleSend("email")}
-                      disabled={isLoading}
-                    >
-                      <MailIcon className="mr-2 h-4 w-4" />
-                      Enviar por Email
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleSend("whatsapp")}
-                      disabled={isLoading}
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Enviar por WhatsApp
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  {files && (
+                    <div className="space-y-4 animate-fadeIn">
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1"
+                          onClick={() => handleSend("email")}
+                          disabled={isLoading}
+                        >
+                          <MailIcon className="mr-2 h-4 w-4" />
+                          Enviar por Email
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={() => handleSend("whatsapp")}
+                          disabled={isLoading}
+                        >
+                          <MessageSquare className="mr-2 h-4 w-4" />
+                          Enviar por WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+                <TabsContent value="auto">
+                  <AutoUpload selectedClient={selectedClient} documentType={documentType} />
+                </TabsContent>
+              </Tabs>
             </div>
           ) : (
             <div className="flex h-[400px] items-center justify-center text-gray-500">
