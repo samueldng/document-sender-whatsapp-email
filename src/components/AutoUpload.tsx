@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -43,7 +44,30 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     try {
       console.log("Carregando arquivos...");
       
-      // Buscar documentos da tabela documents
+      // Verificar se há arquivos no bucket que correspondem ao cliente e tipo de documento
+      const filePrefixByDocType = selectedClient ? 
+        `client_${selectedClient.id}/${documentType}/` : 
+        documentType === "invoice" ? "invoice/" : "tax/";
+        
+      console.log("Buscando arquivos com prefixo:", filePrefixByDocType);
+      
+      // Primeiro, buscar arquivos no storage
+      const { data: storageFiles, error: storageError } = await supabase.storage
+        .from('documents')
+        .list(filePrefixByDocType.split('/')[0], {
+          limit: 100,
+          offset: 0,
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
+        
+      if (storageError) {
+        console.error("Erro ao buscar arquivos no storage:", storageError);
+        throw storageError;
+      }
+      
+      console.log(`Encontrados ${storageFiles?.length || 0} arquivos no storage`);
+      
+      // Depois buscar documentos da tabela documents para verificar quais já estão indexados
       const query = supabase
         .from('documents')
         .select('*')
@@ -54,27 +78,53 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         query.eq('client_id', selectedClient.id);
       }
       
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const { data: dbDocs, error: dbError } = await query.order('created_at', { ascending: false });
       
-      if (error) {
-        console.error("Erro ao consultar tabela documents:", error);
-        throw error;
+      if (dbError) {
+        console.error("Erro ao consultar tabela documents:", dbError);
+        throw dbError;
       }
       
-      console.log(`Encontrados ${data?.length || 0} documentos na tabela`);
+      console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
       
-      // Obter URLs públicas para cada arquivo
-      if (data && data.length > 0) {
-        const filesWithUrls = await Promise.all(data.map(async (file) => {
+      // Mapear os arquivos do storage para exibição
+      if (storageFiles && storageFiles.length > 0) {
+        // Filtrar apenas os arquivos relevantes (arquivos, não diretórios)
+        const relevantFiles = storageFiles.filter(file => !file.metadata);
+        
+        const filesWithUrls = await Promise.all(relevantFiles.map(async (file) => {
+          const filePath = `${filePrefixByDocType.split('/')[0]}/${file.name}`;
+          
+          // Verificar se este arquivo já está na tabela documents
+          const existingDoc = dbDocs?.find(doc => doc.file_path === filePath);
+          
           const { data: urlData } = await supabase.storage
             .from('documents')
-            .getPublicUrl(file.file_path);
+            .getPublicUrl(filePath);
             
+          // Se o arquivo ainda não estiver indexado na tabela documents, vamos indexá-lo
+          if (!existingDoc) {
+            console.log(`Indexando arquivo ${file.name} na tabela documents`);
+            
+            const { error: insertError } = await supabase
+              .from('documents')
+              .insert({
+                client_id: selectedClient?.id || null,
+                document_type: documentType,
+                file_path: filePath,
+                filename: file.name
+              });
+              
+            if (insertError) {
+              console.error(`Erro ao indexar arquivo ${file.name}:`, insertError);
+            }
+          }
+          
           return {
-            name: file.filename,
-            path: file.file_path,
+            name: file.name,
+            path: filePath,
             url: urlData.publicUrl,
-            created_at: file.created_at
+            created_at: file.created_at || new Date().toISOString()
           };
         }));
         
