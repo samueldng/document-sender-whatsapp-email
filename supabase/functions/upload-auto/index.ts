@@ -14,6 +14,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Recebendo solicitação de upload")
+    
     // Extrair o FormData da solicitação
     const formData = await req.formData()
     const file = formData.get('file')
@@ -21,12 +23,15 @@ serve(async (req) => {
     const documentType = formData.get('documentType') || 'other'
 
     if (!file) {
+      console.error("Nenhum arquivo recebido na solicitação")
       return new Response(
         JSON.stringify({ error: 'Nenhum arquivo enviado' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
 
+    console.log(`Processando arquivo: ${file.name}, tipo: ${file.type}, tamanho: ${file.size} bytes`)
+    
     // Criar cliente Supabase
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -41,45 +46,53 @@ serve(async (req) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const filePath = `${clientId ? `client_${clientId}/` : ''}${documentType}/${timestamp}_${fileName}`
 
+    console.log(`Caminho do arquivo para upload: ${filePath}`)
+
     // Fazer upload do arquivo para o bucket 'documents'
     const { data, error: uploadError } = await supabase.storage
       .from('documents')
       .upload(filePath, file, {
         contentType: file.type,
-        upsert: false
+        upsert: true // Alterado para true para substituir arquivos existentes com mesmo nome
       })
 
     if (uploadError) {
+      console.error(`Erro no upload: ${JSON.stringify(uploadError)}`)
       return new Response(
         JSON.stringify({ error: 'Falha ao fazer upload do arquivo', details: uploadError }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       )
     }
 
+    console.log("Upload para storage concluído com sucesso")
+
     // Obter a URL pública do arquivo
     const { data: publicUrlData } = await supabase.storage
       .from('documents')
       .getPublicUrl(filePath)
 
-    // Registrar o documento no banco de dados (se a tabela documents existir)
+    // Registrar o documento no banco de dados
     try {
       const { error: dbError } = await supabase
         .from('documents')
         .insert({
-          client_id: clientId,
+          client_id: clientId || null,
           filename: fileName,
           file_path: filePath,
           document_type: documentType,
           url: publicUrlData.publicUrl,
-          created_at: new Date()
+          created_at: new Date().toISOString()
         })
 
       if (dbError) {
-        console.error('Erro ao salvar metadados do documento:', dbError)
+        console.error(`Erro ao salvar metadados: ${JSON.stringify(dbError)}`)
+        // Não interrompe o fluxo, apenas loga o erro
+      } else {
+        console.log("Metadados salvos no banco de dados com sucesso")
       }
-    } catch (error) {
-      console.error('Erro ao acessar a tabela de documentos:', error)
-      // Continua mesmo se não conseguir salvar na tabela (pode não existir ainda)
+    } catch (dbException) {
+      console.error(`Exceção ao salvar metadados: ${dbException.message}`)
+      // Não interrompe o fluxo, apenas loga o erro
     }
 
     return new Response(
@@ -91,6 +104,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
+    console.error(`Erro não tratado: ${error.message}`)
     return new Response(
       JSON.stringify({ error: 'Ocorreu um erro inesperado', details: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }

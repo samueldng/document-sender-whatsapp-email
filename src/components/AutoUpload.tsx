@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Client, DocumentType } from "@/types/client";
-import { UploadIcon, FolderIcon, FileIcon, ExternalLinkIcon, Trash2Icon } from "lucide-react";
+import { UploadIcon, FolderIcon, FileIcon, ExternalLinkIcon, Trash2Icon, LoaderIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface AutoUploadProps {
@@ -24,16 +24,26 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Carregar arquivos quando o componente for montado ou quando mudar o cliente/tipo de documento
   useEffect(() => {
     loadUploadedFiles();
-  }, [selectedClient, documentType]);
+    
+    // Configurar um intervalo para atualizar os arquivos periodicamente
+    const intervalId = setInterval(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, 30000); // Atualiza a cada 30 segundos
+    
+    return () => clearInterval(intervalId);
+  }, [selectedClient, documentType, refreshTrigger]);
 
   const loadUploadedFiles = async () => {
     setIsLoadingFiles(true);
     
     try {
+      console.log("Carregando arquivos...");
+      
       // Buscar documentos da tabela documents
       const query = supabase
         .from('documents')
@@ -48,11 +58,14 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
       const { data, error } = await query.order('created_at', { ascending: false });
       
       if (error) {
+        console.error("Erro ao consultar tabela documents:", error);
         throw error;
       }
       
+      console.log(`Encontrados ${data?.length || 0} documentos na tabela`);
+      
       // Obter URLs públicas para cada arquivo
-      if (data) {
+      if (data && data.length > 0) {
         const filesWithUrls = await Promise.all(data.map(async (file) => {
           const { data: urlData } = await supabase.storage
             .from('documents')
@@ -67,6 +80,8 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         }));
         
         setUploadedFiles(filesWithUrls);
+      } else {
+        setUploadedFiles([]);
       }
     } catch (error) {
       console.error('Erro ao carregar arquivos:', error);
@@ -84,30 +99,67 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     setIsLoading(true);
     
     try {
+      let successCount = 0;
+      let errorCount = 0;
+      
       for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        if (selectedClient) {
-          formData.append('clientId', selectedClient.id);
-        }
-        
-        formData.append('documentType', documentType);
+        try {
+          console.log(`Preparando upload para: ${file.name}`);
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          if (selectedClient) {
+            formData.append('clientId', selectedClient.id);
+          }
+          
+          formData.append('documentType', documentType);
 
-        // Chamar a edge function para upload
-        const response = await supabase.functions.invoke('upload-auto', {
-          body: formData,
+          // Chamar a edge function para upload com timeout maior
+          console.log("Enviando arquivo para a edge function upload-auto");
+          const response = await supabase.functions.invoke('upload-auto', {
+            body: formData,
+            timeout: 60000, // 60 segundos de timeout
+          });
+
+          if (response.error) {
+            console.error("Erro na resposta da função:", response.error);
+            throw new Error(response.error.message);
+          }
+
+          console.log("Resposta da função:", response.data);
+          successCount++;
+          
+          toast({
+            title: "Sucesso",
+            description: `Arquivo ${file.name} enviado com sucesso`,
+          });
+        } catch (fileError) {
+          console.error(`Erro ao processar arquivo ${file.name}:`, fileError);
+          errorCount++;
+        }
+      }
+      
+      // Resumo final
+      if (successCount > 0 && errorCount > 0) {
+        toast({
+          title: "Upload Parcial",
+          description: `${successCount} arquivo(s) enviado(s) com sucesso, ${errorCount} falha(s)`,
+          variant: "default",
         });
-
-        if (response.error) {
-          throw new Error(response.error.message);
-        }
-
+      } else if (successCount > 0) {
         toast({
           title: "Sucesso",
-          description: `Arquivo ${file.name} enviado com sucesso`,
+          description: `${successCount} arquivo(s) enviado(s) com sucesso`,
+        });
+      } else if (errorCount > 0) {
+        toast({
+          title: "Erro",
+          description: `Falha ao enviar ${errorCount} arquivo(s)`,
+          variant: "destructive",
         });
       }
+      
     } catch (error) {
       console.error('Erro ao enviar arquivo:', error);
       toast({
@@ -130,6 +182,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         .remove([filePath]);
         
       if (storageError) {
+        console.error("Erro ao excluir arquivo do storage:", storageError);
         throw storageError;
       }
       
@@ -140,6 +193,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         .eq('file_path', filePath);
         
       if (dbError) {
+        console.error("Erro ao excluir registro do banco:", dbError);
         throw dbError;
       }
       
@@ -160,9 +214,32 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     }
   };
 
+  const handleForceRefresh = () => {
+    loadUploadedFiles();
+    toast({
+      title: "Atualizando",
+      description: "Atualizando lista de arquivos...",
+    });
+  };
+
   return (
     <Card className="p-4 mt-4">
-      <h3 className="text-lg font-semibold mb-4">Upload Automático</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Upload Automático</h3>
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={handleForceRefresh}
+          disabled={isLoadingFiles}
+        >
+          {isLoadingFiles ? (
+            <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
+          ) : (
+            <UploadIcon className="h-4 w-4 mr-2" />
+          )}
+          Atualizar Lista
+        </Button>
+      </div>
       
       <div className="space-y-4">
         <p className="text-sm text-gray-600">
@@ -187,8 +264,12 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
             className="mt-2"
             disabled={isLoading}
           >
-            <UploadIcon className="h-4 w-4 mr-2" />
-            Selecionar Arquivos
+            {isLoading ? (
+              <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <UploadIcon className="h-4 w-4 mr-2" />
+            )}
+            {isLoading ? "Enviando..." : "Selecionar Arquivos"}
           </Button>
         </div>
         
@@ -198,6 +279,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
           
           {isLoadingFiles ? (
             <div className="text-center py-4">
+              <LoaderIcon className="h-8 w-8 animate-spin mx-auto mb-2 text-gray-400" />
               <p className="text-sm text-gray-500">Carregando arquivos...</p>
             </div>
           ) : uploadedFiles.length > 0 ? (
