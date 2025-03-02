@@ -36,8 +36,10 @@ export function useClientData() {
   };
 
   const handleClientSave = (client: Client) => {
-    // Fix: Properly type the function passed to setClients
-    setClients((prev: Client[]) => [client, ...prev]);
+    // Fix: Change how we update the clients array to avoid the type error
+    // Instead of using a function update, create a new array directly
+    const existingClients = useDocumentSender().clients;
+    setClients([client, ...existingClients]);
   };
 
   useEffect(() => {
