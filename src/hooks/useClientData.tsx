@@ -36,7 +36,8 @@ export function useClientData() {
   };
 
   const handleClientSave = (client: Client) => {
-    setClients(prev => [client, ...prev]);
+    // Fix: Properly type the function passed to setClients
+    setClients((prev: Client[]) => [client, ...prev]);
   };
 
   useEffect(() => {
