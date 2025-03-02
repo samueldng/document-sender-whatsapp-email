@@ -35,9 +35,14 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       if (!documentsBucketExists) {
         console.log("Bucket 'documents' não encontrado, criando...");
         // Create bucket via edge function
-        await supabase.functions.invoke('create-bucket', {
+        const response = await supabase.functions.invoke('create-bucket', {
           body: { bucketName: 'documents' }
         });
+        
+        if (response.error) {
+          console.error("Erro ao criar bucket:", response.error);
+          return;
+        }
         
         console.log("Bucket 'documents' criado com sucesso!");
       }
@@ -68,6 +73,9 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       }
       
       console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
+      
+      // Make sure bucket exists before trying to list files
+      await checkAndCreateBucket();
       
       // Check for files in the bucket with the specified document type
       const rootFolder = documentType === "invoice" ? "invoice" : "tax";
@@ -191,6 +199,9 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     setIsLoading(true);
     
     try {
+      // Make sure bucket exists before attempting upload
+      await checkAndCreateBucket();
+      
       let successCount = 0;
       let errorCount = 0;
       

@@ -28,6 +28,7 @@ export function useSendDocument() {
     setIsLoading(true);
 
     try {
+      // First check if the documents bucket exists and create it if not
       const { data: buckets, error: bucketsError } = await supabase
         .storage
         .listBuckets();
@@ -41,11 +42,20 @@ export function useSendDocument() {
 
       if (!documentsBucketExists) {
         console.log("Bucket 'documents' não encontrado, criando...");
-        await supabase.functions.invoke('create-bucket', {
+        // Create bucket via edge function
+        const createResponse = await supabase.functions.invoke('create-bucket', {
           body: { bucketName: 'documents' }
         });
+        
+        if (createResponse.error) {
+          console.error("Erro ao criar bucket:", createResponse.error);
+          throw new Error('Falha ao criar bucket de documentos');
+        }
+        
+        console.log("Resposta da criação do bucket:", createResponse.data);
       }
 
+      // Now proceed with file uploads
       for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append('file', file);
