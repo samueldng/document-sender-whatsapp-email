@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Client, DocumentType } from "@/types/client";
 import ClientForm from "@/components/ClientForm";
@@ -76,14 +75,31 @@ export default function Index() {
     setIsLoading(true);
 
     try {
-      // Upload files and send them
+      const { data: buckets, error: bucketsError } = await supabase
+        .storage
+        .listBuckets();
+
+      if (bucketsError) {
+        console.error("Erro ao verificar buckets:", bucketsError);
+        throw new Error('Falha ao verificar buckets de armazenamento');
+      }
+
+      const documentsBucketExists = buckets?.some(bucket => bucket.name === 'documents');
+
+      if (!documentsBucketExists) {
+        console.log("Bucket 'documents' não encontrado, criando...");
+        await supabase.functions.invoke('create-bucket', {
+          body: { bucketName: 'documents' }
+        });
+      }
+
       for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('clientId', selectedClient.id);
         formData.append('documentType', documentType);
+        formData.append('originalFilename', file.name);
 
-        // Upload file
         const uploadResponse = await supabase.functions.invoke('upload-document', {
           body: formData,
         });
@@ -92,23 +108,23 @@ export default function Index() {
           throw new Error('Failed to upload document');
         }
 
-        // Get public URL for the file
+        const filePath = uploadResponse.data.filePath;
         const { data } = await supabase.storage
           .from('documents')
-          .getPublicUrl(uploadResponse.data.filePath);
+          .getPublicUrl(filePath);
 
         if (!data.publicUrl) {
           throw new Error('Failed to get file URL');
         }
 
-        // Send via selected method
         if (method === "email") {
           const sendResponse = await supabase.functions.invoke('send-document', {
             body: {
               clientEmail: selectedClient.email,
               clientName: selectedClient.name,
               documentType,
-              filePath: uploadResponse.data.filePath,
+              filePath: filePath,
+              fileName: file.name,
             },
           });
 
@@ -122,6 +138,7 @@ export default function Index() {
               clientName: selectedClient.name,
               documentType,
               publicUrl: data.publicUrl,
+              fileName: file.name,
             },
           });
 
@@ -136,7 +153,6 @@ export default function Index() {
         description: `${files.length} documento(s) ${method === 'email' ? 'enviado(s) por email' : 'enviado(s) por WhatsApp'}`,
       });
 
-      // Reset state after successful upload and send
       setFiles(null);
       setSelectedClient(null);
     } catch (error) {

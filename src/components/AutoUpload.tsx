@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +27,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
 
   // Carregar arquivos quando o componente for montado ou quando mudar o cliente/tipo de documento
   useEffect(() => {
+    checkAndCreateBucket();
     loadUploadedFiles();
     
     // Configurar um intervalo para atualizar os arquivos periodicamente
@@ -37,6 +37,35 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     
     return () => clearInterval(intervalId);
   }, [selectedClient, documentType, refreshTrigger]);
+
+  // Verifica se o bucket existe e cria se necessário
+  const checkAndCreateBucket = async () => {
+    try {
+      // Verificar se o bucket 'documents' existe
+      const { data: buckets, error: bucketsError } = await supabase
+        .storage
+        .listBuckets();
+        
+      if (bucketsError) {
+        console.error("Erro ao verificar buckets:", bucketsError);
+        return;
+      }
+      
+      const documentsBucketExists = buckets?.some(bucket => bucket.name === 'documents');
+      
+      if (!documentsBucketExists) {
+        console.log("Bucket 'documents' não encontrado, criando...");
+        // O bucket não existe, então vamos criá-lo via função edge
+        await supabase.functions.invoke('create-bucket', {
+          body: { bucketName: 'documents' }
+        });
+        
+        console.log("Bucket 'documents' criado com sucesso!");
+      }
+    } catch (error) {
+      console.error("Erro ao verificar/criar bucket:", error);
+    }
+  };
 
   const loadUploadedFiles = async () => {
     setIsLoadingFiles(true);
@@ -154,7 +183,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         }
         
         return {
-          name: file.name, // Nome original preservado
+          name: existingDoc?.filename || file.name, // Use the filename from DB or original name
           path: filePath,
           url: urlData.publicUrl,
           created_at: file.created_at || existingDoc?.created_at || new Date().toISOString()
