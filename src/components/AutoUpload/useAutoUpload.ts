@@ -1,47 +1,26 @@
+
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Client, DocumentType } from "@/types/client";
-import { UploadIcon, FolderIcon, FileIcon, ExternalLinkIcon, Trash2Icon, LoaderIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { UploadedFile } from "./FilesList";
 
-interface AutoUploadProps {
+interface UseAutoUploadProps {
   selectedClient: Client | null;
   documentType: DocumentType;
 }
 
-interface UploadedFile {
-  name: string;
-  path: string;
-  url: string;
-  created_at: string;
-}
-
-const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
+export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Carregar arquivos quando o componente for montado ou quando mudar o cliente/tipo de documento
-  useEffect(() => {
-    checkAndCreateBucket();
-    loadUploadedFiles();
-    
-    // Configurar um intervalo para atualizar os arquivos periodicamente
-    const intervalId = setInterval(() => {
-      setRefreshTrigger(prev => prev + 1);
-    }, 30000); // Atualiza a cada 30 segundos
-    
-    return () => clearInterval(intervalId);
-  }, [selectedClient, documentType, refreshTrigger]);
-
-  // Verifica se o bucket existe e cria se necessário
+  // Verify and create bucket if necessary
   const checkAndCreateBucket = async () => {
     try {
-      // Verificar se o bucket 'documents' existe
+      // Check if 'documents' bucket exists
       const { data: buckets, error: bucketsError } = await supabase
         .storage
         .listBuckets();
@@ -55,7 +34,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
       
       if (!documentsBucketExists) {
         console.log("Bucket 'documents' não encontrado, criando...");
-        // O bucket não existe, então vamos criá-lo via função edge
+        // Create bucket via edge function
         await supabase.functions.invoke('create-bucket', {
           body: { bucketName: 'documents' }
         });
@@ -67,13 +46,14 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     }
   };
 
+  // Load all uploaded files
   const loadUploadedFiles = async () => {
     setIsLoadingFiles(true);
     
     try {
       console.log("Carregando arquivos...");
       
-      // Buscar todos os documentos do tipo especificado, independente do cliente
+      // Get all documents of the specified type
       const query = supabase
         .from('documents')
         .select('*')
@@ -89,10 +69,10 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
       
       console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
       
-      // Verificar se há arquivos no bucket do tipo de documento especificado
+      // Check for files in the bucket with the specified document type
       const rootFolder = documentType === "invoice" ? "invoice" : "tax";
       
-      // Listar todos os arquivos na pasta raiz do tipo de documento
+      // List all files in the root folder of the document type
       const { data: rootFiles, error: rootError } = await supabase.storage
         .from('documents')
         .list(rootFolder, {
@@ -102,22 +82,22 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         
       if (rootError) {
         console.error("Erro ao buscar arquivos na pasta raiz:", rootError);
-        // Continuar mesmo com erro, pois podemos ter arquivos em pastas de clientes
+        // Continue despite errors
       }
       
-      // Para cada cliente, listar seus arquivos do tipo especificado
+      // For each client, list their files of the specified type
       const { data: clients, error: clientsError } = await supabase
         .from('clients')
         .select('id');
         
       if (clientsError) {
         console.error("Erro ao buscar clientes:", clientsError);
-        // Continuar mesmo com erro
+        // Continue despite errors
       }
       
       let allStorageFiles: any[] = rootFiles || [];
       
-      // Buscar arquivos de todos os clientes
+      // Get files for all clients
       if (clients && clients.length > 0) {
         for (const client of clients) {
           const clientFolder = `client_${client.id}/${documentType}`;
@@ -130,7 +110,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
               });
               
             if (!clientFilesError && clientFiles && clientFiles.length > 0) {
-              // Adicionar informação do cliente a cada arquivo
+              // Add client info to each file
               const clientEnrichedFiles = clientFiles.map(file => ({
                 ...file,
                 clientId: client.id,
@@ -140,31 +120,31 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
             }
           } catch (e) {
             console.error(`Erro ao buscar arquivos do cliente ${client.id}:`, e);
-            // Continuar para o próximo cliente
+            // Continue to the next client
           }
         }
       }
       
-      // Remover diretórios (itens com metadata)
+      // Remove directories (items with metadata)
       const relevantFiles = allStorageFiles.filter(file => !file.metadata);
       
       console.log(`Encontrados ${relevantFiles.length} arquivos relevantes no storage`);
       
-      // Mapear os arquivos do storage para exibição e indexá-los se necessário
+      // Map storage files for display and index them if needed
       const filesWithUrls = await Promise.all(relevantFiles.map(async (file) => {
-        // Determinar o caminho do arquivo
+        // Determine file path
         const folderPrefix = file.clientFolder || rootFolder;
         const filePath = `${folderPrefix}/${file.name}`;
         
-        // Verificar se este arquivo já está na tabela documents
+        // Check if this file is already in the documents table
         const existingDoc = dbDocs?.find(doc => doc.file_path === filePath);
         
-        // Obter URL pública
+        // Get public URL
         const { data: urlData } = await supabase.storage
           .from('documents')
           .getPublicUrl(filePath);
           
-        // Se o arquivo ainda não estiver indexado na tabela documents, vamos indexá-lo
+        // If file is not indexed in documents table, index it
         if (!existingDoc) {
           console.log(`Indexando arquivo ${file.name} na tabela documents`);
           
@@ -174,7 +154,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
               client_id: file.clientId || null,
               document_type: documentType,
               file_path: filePath,
-              filename: file.name // Preservar o nome original do arquivo
+              filename: file.name // Preserve original filename
             });
             
           if (insertError) {
@@ -183,14 +163,14 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         }
         
         return {
-          name: existingDoc?.filename || file.name, // Use the filename from DB or original name
+          name: existingDoc?.filename || file.name, // Use filename from DB or original name
           path: filePath,
           url: urlData.publicUrl,
           created_at: file.created_at || existingDoc?.created_at || new Date().toISOString()
         };
       }));
       
-      // Ordenar arquivos por data de criação (mais recentes primeiro)
+      // Sort files by creation date (newest first)
       filesWithUrls.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       
       setUploadedFiles(filesWithUrls);
@@ -206,6 +186,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     }
   };
 
+  // Handle file upload
   const handleUploadTest = async (files: FileList) => {
     setIsLoading(true);
     
@@ -225,9 +206,9 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
           }
           
           formData.append('documentType', documentType);
-          formData.append('originalFilename', file.name); // Adicionar nome original do arquivo
+          formData.append('originalFilename', file.name); // Add original filename
 
-          // Chamar a edge function para upload
+          // Call edge function for upload
           console.log("Enviando arquivo para a edge function upload-auto");
           const response = await supabase.functions.invoke('upload-auto', {
             body: formData,
@@ -251,7 +232,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         }
       }
       
-      // Resumo final
+      // Final summary
       if (successCount > 0 && errorCount > 0) {
         toast({
           title: "Upload Parcial",
@@ -280,14 +261,15 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
       });
     } finally {
       setIsLoading(false);
-      // Recarregar a lista de arquivos após o upload
+      // Reload files list after upload
       loadUploadedFiles();
     }
   };
 
+  // Handle file deletion
   const handleDeleteFile = async (filePath: string) => {
     try {
-      // Excluir o arquivo do bucket de armazenamento
+      // Delete file from storage bucket
       const { error: storageError } = await supabase.storage
         .from('documents')
         .remove([filePath]);
@@ -297,7 +279,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         throw storageError;
       }
       
-      // Excluir o registro do banco de dados
+      // Delete record from database
       const { error: dbError } = await supabase
         .from('documents')
         .delete()
@@ -308,7 +290,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
         throw dbError;
       }
       
-      // Atualizar a lista de arquivos
+      // Update files list
       setUploadedFiles(uploadedFiles.filter(file => file.path !== filePath));
       
       toast({
@@ -325,6 +307,7 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     }
   };
 
+  // Force refresh of files list
   const handleForceRefresh = () => {
     loadUploadedFiles();
     toast({
@@ -333,121 +316,25 @@ const AutoUpload = ({ selectedClient, documentType }: AutoUploadProps) => {
     });
   };
 
-  return (
-    <Card className="p-4 mt-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Upload Automático</h3>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={handleForceRefresh}
-          disabled={isLoadingFiles}
-        >
-          {isLoadingFiles ? (
-            <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <UploadIcon className="h-4 w-4 mr-2" />
-          )}
-          Atualizar Lista
-        </Button>
-      </div>
-      
-      <div className="space-y-4">
-        <p className="text-sm text-gray-600">
-          Para testar o upload manual de um arquivo para a pasta monitorada:
-        </p>
-        
-        <div className="relative border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center">
-          <FolderIcon className="h-12 w-12 text-gray-400 mb-2" />
-          <p className="text-sm text-center text-gray-500 mb-2">
-            Arraste arquivos aqui ou clique para selecionar
-          </p>
-          <input
-            type="file"
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            multiple
-            onChange={(e) => e.target.files && handleUploadTest(e.target.files)}
-            disabled={isLoading}
-          />
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <UploadIcon className="h-4 w-4 mr-2" />
-            )}
-            {isLoading ? "Enviando..." : "Selecionar Arquivos"}
-          </Button>
-        </div>
-        
-        {/* Lista de arquivos enviados */}
-        <div className="mt-6">
-          <h4 className="text-md font-medium mb-3">Arquivos Enviados</h4>
-          
-          {isLoadingFiles ? (
-            <div className="text-center py-4">
-              <LoaderIcon className="h-8 w-8 animate-spin mx-auto mb-2 text-gray-400" />
-              <p className="text-sm text-gray-500">Carregando arquivos...</p>
-            </div>
-          ) : uploadedFiles.length > 0 ? (
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-              {uploadedFiles.map((file, index) => (
-                <div 
-                  key={index} 
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center space-x-3 overflow-hidden">
-                    <FileIcon className="h-5 w-5 flex-shrink-0 text-blue-500" />
-                    <div className="truncate">
-                      <p className="font-medium text-sm truncate">{file.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(file.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => window.open(file.url, '_blank')}
-                      title="Abrir arquivo"
-                    >
-                      <ExternalLinkIcon className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => handleDeleteFile(file.path)}
-                      title="Excluir arquivo"
-                    >
-                      <Trash2Icon className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 border border-dashed rounded-lg">
-              <p className="text-sm text-gray-500">Nenhum arquivo enviado ainda</p>
-            </div>
-          )}
-        </div>
-        
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="text-md font-medium mb-2">Monitoramento Automático de Pasta</h4>
-          <p className="text-sm text-gray-600">
-            Para configurar o monitoramento automático de uma pasta no seu computador, 
-            você pode usar o script Python fornecido. Os arquivos colocados na pasta 
-            monitorada serão automaticamente enviados para este sistema.
-          </p>
-        </div>
-      </div>
-    </Card>
-  );
-};
+  // Set up automatic refresh and initial load
+  useEffect(() => {
+    checkAndCreateBucket();
+    loadUploadedFiles();
+    
+    // Set up interval to refresh files periodically
+    const intervalId = setInterval(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, 30000); // Refresh every 30 seconds
+    
+    return () => clearInterval(intervalId);
+  }, [selectedClient, documentType, refreshTrigger]);
 
-export default AutoUpload;
+  return {
+    isLoading,
+    isLoadingFiles,
+    uploadedFiles,
+    handleUploadTest,
+    handleDeleteFile,
+    handleForceRefresh,
+  };
+}
