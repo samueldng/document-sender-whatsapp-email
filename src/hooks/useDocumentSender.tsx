@@ -15,6 +15,63 @@ export function useSendDocument() {
     });
   };
 
+  // Helper function to check and create a bucket if it doesn't exist
+  const ensureBucketExists = async (bucketName: string) => {
+    try {
+      console.log(`Verificando existência do bucket: ${bucketName}`);
+      
+      // Check if bucket exists
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      
+      if (bucketsError) {
+        console.error("Erro ao verificar buckets:", bucketsError);
+        throw new Error('Falha ao verificar buckets de armazenamento');
+      }
+      
+      const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+      
+      if (!bucketExists) {
+        console.log(`Bucket '${bucketName}' não encontrado, criando...`);
+        
+        // Create bucket via edge function
+        const createResponse = await supabase.functions.invoke('create-bucket', {
+          body: { bucketName }
+        });
+        
+        if (createResponse.error) {
+          console.error("Erro ao criar bucket:", createResponse.error);
+          throw new Error(`Falha ao criar bucket ${bucketName}: ${createResponse.error.message}`);
+        }
+        
+        console.log(`Resposta da criação do bucket:`, createResponse.data);
+        
+        // Double check that the bucket was created
+        const { data: checkBuckets, error: checkError } = await supabase.storage.listBuckets();
+        
+        if (checkError) {
+          console.error("Erro ao verificar se o bucket foi criado:", checkError);
+          throw new Error('Falha ao verificar a criação do bucket');
+        }
+        
+        const bucketCreated = checkBuckets?.some(bucket => bucket.name === bucketName);
+        
+        if (!bucketCreated) {
+          console.error(`Bucket '${bucketName}' não foi criado apesar da resposta positiva`);
+          throw new Error('Falha ao criar bucket: não encontrado após criação');
+        }
+        
+        console.log(`Bucket '${bucketName}' criado com sucesso!`);
+      } else {
+        console.log(`Bucket '${bucketName}' já existe`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Erro ao garantir existência do bucket:", error);
+      throw error;
+    }
+  };
+
   const handleSend = async (method: "email" | "whatsapp") => {
     if (!selectedClient || !files) {
       toast({
@@ -28,32 +85,8 @@ export function useSendDocument() {
     setIsLoading(true);
 
     try {
-      // First check if the documents bucket exists and create it if not
-      const { data: buckets, error: bucketsError } = await supabase
-        .storage
-        .listBuckets();
-
-      if (bucketsError) {
-        console.error("Erro ao verificar buckets:", bucketsError);
-        throw new Error('Falha ao verificar buckets de armazenamento');
-      }
-
-      const documentsBucketExists = buckets?.some(bucket => bucket.name === 'documents');
-
-      if (!documentsBucketExists) {
-        console.log("Bucket 'documents' não encontrado, criando...");
-        // Create bucket via edge function
-        const createResponse = await supabase.functions.invoke('create-bucket', {
-          body: { bucketName: 'documents' }
-        });
-        
-        if (createResponse.error) {
-          console.error("Erro ao criar bucket:", createResponse.error);
-          throw new Error('Falha ao criar bucket de documentos');
-        }
-        
-        console.log("Resposta da criação do bucket:", createResponse.data);
-      }
+      // Ensure documents bucket exists
+      await ensureBucketExists('documents');
 
       // Now proceed with file uploads
       for (const file of Array.from(files)) {
@@ -63,21 +96,35 @@ export function useSendDocument() {
         formData.append('documentType', documentType);
         formData.append('originalFilename', file.name);
 
+        console.log(`Enviando arquivo: ${file.name}, tipo: ${documentType}, cliente: ${selectedClient.id}`);
+        
         const uploadResponse = await supabase.functions.invoke('upload-document', {
           body: formData,
         });
 
-        if (!uploadResponse.data) {
-          throw new Error('Failed to upload document');
+        if (uploadResponse.error) {
+          console.error("Erro ao fazer upload:", uploadResponse.error);
+          throw new Error(`Falha ao enviar documento: ${uploadResponse.error.message}`);
         }
 
+        if (!uploadResponse.data) {
+          throw new Error('Resposta de upload vazia');
+        }
+
+        console.log("Resposta do upload:", uploadResponse.data);
         const filePath = uploadResponse.data.filePath;
-        const { data } = await supabase.storage
+        
+        const { data, error: urlError } = await supabase.storage
           .from('documents')
           .getPublicUrl(filePath);
 
+        if (urlError) {
+          console.error("Erro ao obter URL pública:", urlError);
+          throw new Error('Falha ao obter URL do arquivo');
+        }
+
         if (!data.publicUrl) {
-          throw new Error('Failed to get file URL');
+          throw new Error('URL pública não disponível');
         }
 
         if (method === "email") {
@@ -91,8 +138,9 @@ export function useSendDocument() {
             },
           });
 
-          if (!sendResponse.data) {
-            throw new Error('Failed to send email');
+          if (sendResponse.error || !sendResponse.data) {
+            console.error("Erro ao enviar email:", sendResponse.error);
+            throw new Error('Falha ao enviar email');
           }
         } else if (method === "whatsapp") {
           const sendResponse = await supabase.functions.invoke('send-whatsapp', {
@@ -105,8 +153,9 @@ export function useSendDocument() {
             },
           });
 
-          if (!sendResponse.data) {
-            throw new Error('Failed to send WhatsApp message');
+          if (sendResponse.error || !sendResponse.data) {
+            console.error("Erro ao enviar WhatsApp:", sendResponse.error);
+            throw new Error('Falha ao enviar WhatsApp');
           }
         }
       }
@@ -122,7 +171,7 @@ export function useSendDocument() {
       console.error('Error handling documents:', error);
       toast({
         title: "Erro",
-        description: `Erro ao ${method === 'email' ? 'enviar email' : 'enviar WhatsApp'}`,
+        description: `Erro ao ${method === 'email' ? 'enviar email' : 'enviar WhatsApp'}: ${error.message}`,
         variant: "destructive",
       });
     } finally {

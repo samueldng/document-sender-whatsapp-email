@@ -31,6 +31,8 @@ serve(async (req) => {
       );
     }
 
+    console.log(`Attempting to create bucket: ${bucketName}`);
+
     // Create Supabase client with admin privileges
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -68,6 +70,8 @@ serve(async (req) => {
       throw error;
     }
 
+    console.log(`Successfully created bucket: ${bucketName}`);
+    
     return new Response(
       JSON.stringify({ message: `Bucket '${bucketName}' created successfully`, success: true }),
       {

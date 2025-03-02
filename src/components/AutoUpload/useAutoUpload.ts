@@ -20,6 +20,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   // Verify and create bucket if necessary
   const checkAndCreateBucket = async () => {
     try {
+      console.log("Verificando existência do bucket 'documents'");
       // Check if 'documents' bucket exists
       const { data: buckets, error: bucketsError } = await supabase
         .storage
@@ -27,7 +28,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
         
       if (bucketsError) {
         console.error("Erro ao verificar buckets:", bucketsError);
-        return;
+        throw new Error("Falha ao verificar buckets");
       }
       
       const documentsBucketExists = buckets?.some(bucket => bucket.name === 'documents');
@@ -41,13 +42,38 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
         
         if (response.error) {
           console.error("Erro ao criar bucket:", response.error);
-          return;
+          throw new Error(`Falha ao criar bucket: ${response.error.message}`);
+        }
+        
+        // Double check that the bucket was created
+        const { data: checkBuckets, error: checkError } = await supabase.storage.listBuckets();
+        
+        if (checkError) {
+          console.error("Erro ao verificar se o bucket foi criado:", checkError);
+          throw new Error('Falha ao verificar a criação do bucket');
+        }
+        
+        const bucketCreated = checkBuckets?.some(bucket => bucket.name === 'documents');
+        
+        if (!bucketCreated) {
+          console.error("Bucket 'documents' não foi criado apesar da resposta positiva");
+          throw new Error('Falha ao criar bucket: não encontrado após criação');
         }
         
         console.log("Bucket 'documents' criado com sucesso!");
+      } else {
+        console.log("Bucket 'documents' já existe");
       }
+      
+      return true;
     } catch (error) {
       console.error("Erro ao verificar/criar bucket:", error);
+      toast({
+        title: "Erro",
+        description: `Falha ao verificar/criar bucket: ${error.message}`,
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
@@ -58,6 +84,13 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     try {
       console.log("Carregando arquivos...");
       
+      // Make sure bucket exists before trying to list files
+      const bucketReady = await checkAndCreateBucket();
+      if (!bucketReady) {
+        console.error("Bucket not ready, cannot load files");
+        return;
+      }
+      
       // Get all documents of the specified type
       const query = supabase
         .from('documents')
@@ -65,17 +98,18 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
         .eq('document_type', documentType)
         .order('created_at', { ascending: false });
       
+      if (selectedClient) {
+        query.eq('client_id', selectedClient.id);
+      }
+      
       const { data: dbDocs, error: dbError } = await query;
       
       if (dbError) {
         console.error("Erro ao consultar tabela documents:", dbError);
-        throw dbError;
+        throw new Error(`Falha ao consultar documentos: ${dbError.message}`);
       }
       
       console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
-      
-      // Make sure bucket exists before trying to list files
-      await checkAndCreateBucket();
       
       // Check for files in the bucket with the specified document type
       const rootFolder = documentType === "invoice" ? "invoice" : "tax";
@@ -186,7 +220,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       console.error('Erro ao carregar arquivos:', error);
       toast({
         title: "Erro",
-        description: "Falha ao carregar os arquivos enviados",
+        description: `Falha ao carregar os arquivos enviados: ${error.message}`,
         variant: "destructive",
       });
     } finally {
@@ -200,7 +234,10 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     
     try {
       // Make sure bucket exists before attempting upload
-      await checkAndCreateBucket();
+      const bucketReady = await checkAndCreateBucket();
+      if (!bucketReady) {
+        throw new Error("Não foi possível criar ou verificar o bucket");
+      }
       
       let successCount = 0;
       let errorCount = 0;
@@ -267,7 +304,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       console.error('Erro ao enviar arquivo:', error);
       toast({
         title: "Erro",
-        description: "Falha ao enviar arquivo",
+        description: `Falha ao enviar arquivo: ${error.message}`,
         variant: "destructive",
       });
     } finally {
