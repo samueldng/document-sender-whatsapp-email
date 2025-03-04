@@ -114,14 +114,11 @@ export function useSendDocument() {
         console.log("Resposta do upload:", uploadResponse.data);
         const filePath = uploadResponse.data.filePath;
         
-        const { data, error: urlError } = await supabase.storage
+        // Fixed: The getPublicUrl method returns an object with a data property that contains publicUrl
+        // It doesn't have an error property according to the type definition
+        const { data } = await supabase.storage
           .from('documents')
           .getPublicUrl(filePath);
-
-        if (urlError) {
-          console.error("Erro ao obter URL pública:", urlError);
-          throw new Error('Falha ao obter URL do arquivo');
-        }
 
         if (!data.publicUrl) {
           throw new Error('URL pública não disponível');
