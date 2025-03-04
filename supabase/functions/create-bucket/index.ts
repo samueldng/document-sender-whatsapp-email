@@ -20,8 +20,10 @@ serve(async (req) => {
 
   try {
     const { bucketName }: CreateBucketRequest = await req.json();
+    console.log("Request received to create bucket:", bucketName);
 
     if (!bucketName) {
+      console.error("No bucket name provided");
       return new Response(
         JSON.stringify({ error: "bucketName is required" }),
         {
@@ -31,28 +33,30 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Attempting to create bucket: ${bucketName}`);
-
-    // Create Supabase client with admin privileges
+    // Create Supabase admin client
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Check if bucket already exists
-    const { data: buckets, error: bucketsError } = await supabaseAdmin.storage.listBuckets();
+    // First check if bucket exists
+    const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
     
-    if (bucketsError) {
-      console.error("Error checking buckets:", bucketsError);
-      throw bucketsError;
+    if (listError) {
+      console.error("Error listing buckets:", listError);
+      throw listError;
     }
-    
+
     const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
     
     if (bucketExists) {
-      console.log(`Bucket '${bucketName}' already exists.`);
+      console.log(`Bucket '${bucketName}' already exists`);
       return new Response(
-        JSON.stringify({ message: `Bucket '${bucketName}' already exists`, success: true }),
+        JSON.stringify({ 
+          success: true,
+          message: `Bucket '${bucketName}' already exists and is ready to use`,
+          bucket: bucketName 
+        }),
         {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -60,9 +64,13 @@ serve(async (req) => {
       );
     }
 
-    // Create bucket
+    console.log(`Creating new bucket: ${bucketName}`);
+    
+    // Create bucket with public access
     const { data, error } = await supabaseAdmin.storage.createBucket(bucketName, {
-      public: true, // Make the bucket public
+      public: true,
+      fileSizeLimit: null,
+      downloadExpiration: 0,
     });
 
     if (error) {
@@ -70,10 +78,28 @@ serve(async (req) => {
       throw error;
     }
 
-    console.log(`Successfully created bucket: ${bucketName}`);
+    // Verify bucket was created
+    const { data: verifyBuckets, error: verifyError } = await supabaseAdmin.storage.listBuckets();
     
+    if (verifyError) {
+      console.error("Error verifying bucket creation:", verifyError);
+      throw verifyError;
+    }
+
+    const bucketCreated = verifyBuckets?.some(bucket => bucket.name === bucketName);
+    
+    if (!bucketCreated) {
+      throw new Error(`Failed to verify bucket '${bucketName}' creation`);
+    }
+
+    console.log(`Successfully created bucket: ${bucketName}`);
+
     return new Response(
-      JSON.stringify({ message: `Bucket '${bucketName}' created successfully`, success: true }),
+      JSON.stringify({
+        success: true,
+        message: `Bucket '${bucketName}' created successfully`,
+        bucket: bucketName
+      }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -82,7 +108,11 @@ serve(async (req) => {
   } catch (error) {
     console.error("Error in create-bucket function:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        success: false,
+        error: error.message || "An unexpected error occurred",
+        details: error
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

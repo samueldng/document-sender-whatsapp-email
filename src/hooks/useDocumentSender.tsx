@@ -1,4 +1,3 @@
-
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useDocumentSender } from "@/contexts/DocumentSenderContext";
@@ -20,51 +19,22 @@ export function useSendDocument() {
     try {
       console.log(`Verificando existência do bucket: ${bucketName}`);
       
-      // Check if bucket exists
-      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      // Create bucket via edge function
+      const response = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName }
+      });
       
-      if (bucketsError) {
-        console.error("Erro ao verificar buckets:", bucketsError);
-        throw new Error('Falha ao verificar buckets de armazenamento');
+      if (response.error) {
+        console.error("Erro ao criar bucket:", response.error);
+        throw new Error(`Falha ao criar bucket ${bucketName}: ${response.error.message}`);
       }
       
-      const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
-      
-      if (!bucketExists) {
-        console.log(`Bucket '${bucketName}' não encontrado, criando...`);
-        
-        // Create bucket via edge function
-        const createResponse = await supabase.functions.invoke('create-bucket', {
-          body: { bucketName }
-        });
-        
-        if (createResponse.error) {
-          console.error("Erro ao criar bucket:", createResponse.error);
-          throw new Error(`Falha ao criar bucket ${bucketName}: ${createResponse.error.message}`);
-        }
-        
-        console.log(`Resposta da criação do bucket:`, createResponse.data);
-        
-        // Double check that the bucket was created
-        const { data: checkBuckets, error: checkError } = await supabase.storage.listBuckets();
-        
-        if (checkError) {
-          console.error("Erro ao verificar se o bucket foi criado:", checkError);
-          throw new Error('Falha ao verificar a criação do bucket');
-        }
-        
-        const bucketCreated = checkBuckets?.some(bucket => bucket.name === bucketName);
-        
-        if (!bucketCreated) {
-          console.error(`Bucket '${bucketName}' não foi criado apesar da resposta positiva`);
-          throw new Error('Falha ao criar bucket: não encontrado após criação');
-        }
-        
-        console.log(`Bucket '${bucketName}' criado com sucesso!`);
-      } else {
-        console.log(`Bucket '${bucketName}' já existe`);
+      if (!response.data?.success) {
+        console.error("Resposta inesperada ao criar bucket:", response.data);
+        throw new Error(`Falha ao criar bucket ${bucketName}: resposta inválida`);
       }
       
+      console.log(`Bucket '${bucketName}' está pronto para uso`);
       return true;
     } catch (error) {
       console.error("Erro ao garantir existência do bucket:", error);
