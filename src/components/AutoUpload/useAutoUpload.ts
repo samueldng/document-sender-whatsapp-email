@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Client, DocumentType } from "@/types/client";
-import { UploadedFile } from "./FilesList";
 import { useFileManagement } from "./hooks/useFileManagement";
 import { useFileUpload } from "./hooks/useFileUpload";
 
@@ -19,17 +18,20 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     isLoadingFiles, 
     uploadedFiles, 
     loadUploadedFiles, 
-    handleDeleteFile 
+    handleDeleteFile,
+    loadMoreFiles,
+    hasMoreFiles,
+    resetPagination
   } = useFileManagement({ 
     selectedClient, 
     documentType 
   });
 
   const handleForceRefresh = useCallback(() => {
-    loadUploadedFiles();
+    loadUploadedFiles(true); // true means force refresh, ignore cache
     toast({
-      title: "Atualizando",
-      description: "Atualizando lista de arquivos...",
+      title: "Updating",
+      description: "Updating file list...",
     });
   }, [loadUploadedFiles, toast]);
 
@@ -39,7 +41,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   } = useFileUpload({ 
     selectedClient, 
     documentType, 
-    onUploadComplete: loadUploadedFiles 
+    onUploadComplete: handleForceRefresh // Use force refresh after upload for immediate feedback
   });
 
   // Handle file upload (wrapper to maintain the original API)
@@ -47,24 +49,32 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     return handleUploadInternal(files);
   }, [handleUploadInternal]);
 
-  // Set up automatic refresh and initial load
+  // Reset pagination and cache when client or document type changes
+  useEffect(() => {
+    resetPagination();
+  }, [selectedClient, documentType, resetPagination]);
+  
+  // Initial load and periodic refresh
   useEffect(() => {
     loadUploadedFiles();
     
-    // Set up interval to refresh files periodically
+    // Set up interval to refresh files periodically, but don't force refresh
+    // to use the cache when available
     const intervalId = setInterval(() => {
       setRefreshTrigger(prev => prev + 1);
-    }, 30000); // Refresh every 30 seconds
+    }, 60000); // Refresh every 60 seconds instead of 30 to reduce API calls
     
     return () => clearInterval(intervalId);
-  }, [selectedClient, documentType, loadUploadedFiles, refreshTrigger]);
+  }, [loadUploadedFiles, refreshTrigger]);
 
   return {
     isLoading,
     isLoadingFiles,
     uploadedFiles,
+    hasMoreFiles,
     handleUploadTest,
     handleDeleteFile,
     handleForceRefresh,
+    loadMoreFiles,
   };
 }

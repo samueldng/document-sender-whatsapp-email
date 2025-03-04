@@ -20,13 +20,15 @@ export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
     handleUploadTest, 
     handleDeleteFile,
     handleForceRefresh,
+    loadMoreFiles,
+    hasMoreFiles,
     isLoading
   } = useAutoUpload({ selectedClient, documentType });
 
   return (
     <Card className="p-4 mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Upload Automático</h3>
+        <h3 className="text-lg font-semibold">Automatic Upload</h3>
         <Button 
           variant="outline" 
           size="sm"
@@ -38,13 +40,13 @@ export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
           ) : (
             <UploadIcon className="h-4 w-4 mr-2" />
           )}
-          Atualizar Lista
+          Refresh List
         </Button>
       </div>
       
       <div className="space-y-4">
         <p className="text-sm text-gray-600">
-          Para testar o upload manual de um arquivo para a pasta monitorada:
+          To test manual upload of a file to the monitored folder:
         </p>
         
         <UploadArea 
@@ -56,14 +58,17 @@ export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
           files={uploadedFiles}
           isLoading={isLoadingFiles}
           onDelete={handleDeleteFile}
+          hasMoreFiles={hasMoreFiles}
+          onLoadMore={loadMoreFiles}
+          isLoadingMore={isLoadingFiles && uploadedFiles.length > 0}
         />
         
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="text-md font-medium mb-2">Monitoramento Automático de Pasta</h4>
+          <h4 className="text-md font-medium mb-2">Automatic Folder Monitoring</h4>
           <p className="text-sm text-gray-600">
-            Para configurar o monitoramento automático de uma pasta no seu computador, 
-            você pode usar o script Python fornecido. Os arquivos colocados na pasta 
-            monitorada serão automaticamente enviados para este sistema.
+            To set up automatic folder monitoring on your computer, 
+            you can use the provided Python script. Files placed in the
+            monitored folder will be automatically uploaded to this system.
           </p>
         </div>
       </div>
