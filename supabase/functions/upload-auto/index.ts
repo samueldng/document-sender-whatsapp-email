@@ -8,76 +8,114 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Tratar solicitações OPTIONS para CORS
+  // Handle OPTIONS requests for CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    console.log("Recebendo solicitação de upload")
+    console.log("Receiving upload request")
     
-    // Extrair o FormData da solicitação
+    // Extract FormData from request
     const formData = await req.formData()
     const file = formData.get('file')
     const clientId = formData.get('clientId')
     const documentType = formData.get('documentType') || 'other'
+    const originalFilename = formData.get('originalFilename')
 
     if (!file) {
-      console.error("Nenhum arquivo recebido na solicitação")
+      console.error("No file received in request")
       return new Response(
-        JSON.stringify({ error: 'Nenhum arquivo enviado' }),
+        JSON.stringify({ error: 'No file sent' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
 
-    console.log(`Processando arquivo: ${file.name}, tipo: ${file.type}, tamanho: ${file.size} bytes`)
+    // Use original filename if provided, otherwise use the file's name
+    const fileName = originalFilename || file.name;
+    console.log(`Processing file: ${fileName}, type: ${file.type}, size: ${file.size} bytes`)
     
-    // Criar cliente Supabase
+    // Create Supabase client
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Sanitizar o nome do arquivo para evitar caracteres problemáticos
-    const fileName = file.name.replace(/[^\x00-\x7F]/g, '_')
-    const fileExt = fileName.split('.').pop()
+    // Check if the documents bucket exists
+    console.log("Checking if documents bucket exists");
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
     
-    // Criar um caminho único para o arquivo
+    if (bucketsError) {
+      console.error("Error listing buckets:", bucketsError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to check bucket existence', details: bucketsError }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
+    }
+    
+    const bucketExists = buckets?.some(bucket => bucket.name === 'documents');
+    
+    if (!bucketExists) {
+      console.log("Documents bucket doesn't exist, creating it");
+      
+      const { data: createData, error: createError } = await supabase.storage.createBucket(
+        'documents',
+        { public: true }
+      );
+      
+      if (createError) {
+        console.error("Error creating documents bucket:", createError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to create documents bucket', details: createError }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+        )
+      }
+      
+      console.log("Documents bucket created successfully");
+    } else {
+      console.log("Documents bucket already exists");
+    }
+
+    // Sanitize filename to avoid problematic characters
+    const sanitizedFileName = fileName.replace(/[^\x00-\x7F]/g, '_')
+    const fileExt = sanitizedFileName.split('.').pop()
+    
+    // Create a unique path for the file
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const filePath = `${clientId ? `client_${clientId}/` : ''}${documentType}/${timestamp}_${fileName}`
+    const filePath = `${clientId ? `client_${clientId}/` : ''}${documentType}/${timestamp}_${sanitizedFileName}`
 
-    console.log(`Caminho do arquivo para upload: ${filePath}`)
+    console.log(`File path for upload: ${filePath}`)
 
-    // Fazer upload do arquivo para o bucket 'documents'
+    // Upload file to 'documents' bucket
     const { data, error: uploadError } = await supabase.storage
       .from('documents')
       .upload(filePath, file, {
         contentType: file.type,
-        upsert: true // Alterado para true para substituir arquivos existentes com mesmo nome
+        upsert: true
       })
 
     if (uploadError) {
-      console.error(`Erro no upload: ${JSON.stringify(uploadError)}`)
+      console.error(`Upload error: ${JSON.stringify(uploadError)}`)
       return new Response(
-        JSON.stringify({ error: 'Falha ao fazer upload do arquivo', details: uploadError }),
+        JSON.stringify({ error: 'Failed to upload file', details: uploadError }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       )
     }
 
-    console.log("Upload para storage concluído com sucesso")
+    console.log("Upload to storage completed successfully")
 
-    // Obter a URL pública do arquivo
+    // Get the public URL for the file
     const { data: publicUrlData } = await supabase.storage
       .from('documents')
       .getPublicUrl(filePath)
 
-    // Registrar o documento no banco de dados
+    // Record the document in the database
     try {
       const { error: dbError } = await supabase
         .from('documents')
         .insert({
           client_id: clientId || null,
-          filename: fileName,
+          filename: sanitizedFileName,
           file_path: filePath,
           document_type: documentType,
           url: publicUrlData.publicUrl,
@@ -85,28 +123,29 @@ serve(async (req) => {
         })
 
       if (dbError) {
-        console.error(`Erro ao salvar metadados: ${JSON.stringify(dbError)}`)
-        // Não interrompe o fluxo, apenas loga o erro
+        console.error(`Error saving metadata: ${JSON.stringify(dbError)}`)
+        // Don't interrupt the flow, just log the error
       } else {
-        console.log("Metadados salvos no banco de dados com sucesso")
+        console.log("Metadata saved to database successfully")
       }
     } catch (dbException) {
-      console.error(`Exceção ao salvar metadados: ${dbException.message}`)
-      // Não interrompe o fluxo, apenas loga o erro
+      console.error(`Exception while saving metadata: ${dbException.message}`)
+      // Don't interrupt the flow, just log the error
     }
 
     return new Response(
       JSON.stringify({ 
-        message: 'Arquivo enviado com sucesso', 
+        message: 'File uploaded successfully', 
         filePath,
+        originalFilename: sanitizedFileName,
         publicUrl: publicUrlData.publicUrl 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
-    console.error(`Erro não tratado: ${error.message}`)
+    console.error(`Unhandled error: ${error.message}`)
     return new Response(
-      JSON.stringify({ error: 'Ocorreu um erro inesperado', details: error.message }),
+      JSON.stringify({ error: 'An unexpected error occurred', details: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }

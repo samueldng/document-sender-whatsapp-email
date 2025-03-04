@@ -21,50 +21,18 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   const checkAndCreateBucket = async () => {
     try {
       console.log("Verificando existência do bucket 'documents'");
-      // Check if 'documents' bucket exists
-      const { data: buckets, error: bucketsError } = await supabase
-        .storage
-        .listBuckets();
-        
-      if (bucketsError) {
-        console.error("Erro ao verificar buckets:", bucketsError);
-        throw new Error("Falha ao verificar buckets");
+      
+      // Create bucket via edge function
+      const response = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents' }
+      });
+      
+      if (!response.data?.success) {
+        console.error("Erro ao criar bucket:", response.error || response.data);
+        throw new Error(`Falha ao criar bucket: ${response.error?.message || 'resposta inválida'}`);
       }
       
-      const documentsBucketExists = buckets?.some(bucket => bucket.name === 'documents');
-      
-      if (!documentsBucketExists) {
-        console.log("Bucket 'documents' não encontrado, criando...");
-        // Create bucket via edge function
-        const response = await supabase.functions.invoke('create-bucket', {
-          body: { bucketName: 'documents' }
-        });
-        
-        if (response.error) {
-          console.error("Erro ao criar bucket:", response.error);
-          throw new Error(`Falha ao criar bucket: ${response.error.message}`);
-        }
-        
-        // Double check that the bucket was created
-        const { data: checkBuckets, error: checkError } = await supabase.storage.listBuckets();
-        
-        if (checkError) {
-          console.error("Erro ao verificar se o bucket foi criado:", checkError);
-          throw new Error('Falha ao verificar a criação do bucket');
-        }
-        
-        const bucketCreated = checkBuckets?.some(bucket => bucket.name === 'documents');
-        
-        if (!bucketCreated) {
-          console.error("Bucket 'documents' não foi criado apesar da resposta positiva");
-          throw new Error('Falha ao criar bucket: não encontrado após criação');
-        }
-        
-        console.log("Bucket 'documents' criado com sucesso!");
-      } else {
-        console.log("Bucket 'documents' já existe");
-      }
-      
+      console.log("Bucket 'documents' está pronto para uso");
       return true;
     } catch (error) {
       console.error("Erro ao verificar/criar bucket:", error);
@@ -111,104 +79,23 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       
       console.log(`Encontrados ${dbDocs?.length || 0} documentos na tabela`);
       
-      // Check for files in the bucket with the specified document type
-      const rootFolder = documentType === "invoice" ? "invoice" : "tax";
-      
-      // List all files in the root folder of the document type
-      const { data: rootFiles, error: rootError } = await supabase.storage
-        .from('documents')
-        .list(rootFolder, {
-          limit: 100,
-          sortBy: { column: 'created_at', order: 'desc' }
-        });
-        
-      if (rootError) {
-        console.error("Erro ao buscar arquivos na pasta raiz:", rootError);
-        // Continue despite errors
+      if (!dbDocs || dbDocs.length === 0) {
+        setUploadedFiles([]);
+        return;
       }
       
-      // For each client, list their files of the specified type
-      const { data: clients, error: clientsError } = await supabase
-        .from('clients')
-        .select('id');
-        
-      if (clientsError) {
-        console.error("Erro ao buscar clientes:", clientsError);
-        // Continue despite errors
-      }
-      
-      let allStorageFiles: any[] = rootFiles || [];
-      
-      // Get files for all clients
-      if (clients && clients.length > 0) {
-        for (const client of clients) {
-          const clientFolder = `client_${client.id}/${documentType}`;
-          try {
-            const { data: clientFiles, error: clientFilesError } = await supabase.storage
-              .from('documents')
-              .list(clientFolder.split('/')[0], {
-                limit: 100,
-                sortBy: { column: 'created_at', order: 'desc' }
-              });
-              
-            if (!clientFilesError && clientFiles && clientFiles.length > 0) {
-              // Add client info to each file
-              const clientEnrichedFiles = clientFiles.map(file => ({
-                ...file,
-                clientId: client.id,
-                clientFolder: clientFolder.split('/')[0]
-              }));
-              allStorageFiles = [...allStorageFiles, ...clientEnrichedFiles];
-            }
-          } catch (e) {
-            console.error(`Erro ao buscar arquivos do cliente ${client.id}:`, e);
-            // Continue to the next client
-          }
-        }
-      }
-      
-      // Remove directories (items with metadata)
-      const relevantFiles = allStorageFiles.filter(file => !file.metadata);
-      
-      console.log(`Encontrados ${relevantFiles.length} arquivos relevantes no storage`);
-      
-      // Map storage files for display and index them if needed
-      const filesWithUrls = await Promise.all(relevantFiles.map(async (file) => {
-        // Determine file path
-        const folderPrefix = file.clientFolder || rootFolder;
-        const filePath = `${folderPrefix}/${file.name}`;
-        
-        // Check if this file is already in the documents table
-        const existingDoc = dbDocs?.find(doc => doc.file_path === filePath);
-        
+      // Map database documents to files with URLs
+      const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
         // Get public URL
         const { data: urlData } = await supabase.storage
           .from('documents')
-          .getPublicUrl(filePath);
+          .getPublicUrl(doc.file_path);
           
-        // If file is not indexed in documents table, index it
-        if (!existingDoc) {
-          console.log(`Indexando arquivo ${file.name} na tabela documents`);
-          
-          const { error: insertError } = await supabase
-            .from('documents')
-            .insert({
-              client_id: file.clientId || null,
-              document_type: documentType,
-              file_path: filePath,
-              filename: file.name // Preserve original filename
-            });
-            
-          if (insertError) {
-            console.error(`Erro ao indexar arquivo ${file.name}:`, insertError);
-          }
-        }
-        
         return {
-          name: existingDoc?.filename || file.name, // Use filename from DB or original name
-          path: filePath,
-          url: urlData.publicUrl,
-          created_at: file.created_at || existingDoc?.created_at || new Date().toISOString()
+          name: doc.filename, // Use the original filename from DB
+          path: doc.file_path,
+          url: doc.url || urlData.publicUrl,
+          created_at: doc.created_at
         };
       }));
       

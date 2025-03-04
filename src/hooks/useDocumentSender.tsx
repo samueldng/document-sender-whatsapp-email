@@ -1,3 +1,4 @@
+
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useDocumentSender } from "@/contexts/DocumentSenderContext";
@@ -23,11 +24,6 @@ export function useSendDocument() {
       const response = await supabase.functions.invoke('create-bucket', {
         body: { bucketName }
       });
-      
-      if (response.error) {
-        console.error("Erro ao criar bucket:", response.error);
-        throw new Error(`Falha ao criar bucket ${bucketName}: ${response.error.message}`);
-      }
       
       if (!response.data?.success) {
         console.error("Resposta inesperada ao criar bucket:", response.data);
@@ -84,8 +80,7 @@ export function useSendDocument() {
         console.log("Resposta do upload:", uploadResponse.data);
         const filePath = uploadResponse.data.filePath;
         
-        // Fixed: The getPublicUrl method returns an object with a data property that contains publicUrl
-        // It doesn't have an error property according to the type definition
+        // Get public URL - this method doesn't return an error property
         const { data } = await supabase.storage
           .from('documents')
           .getPublicUrl(filePath);
