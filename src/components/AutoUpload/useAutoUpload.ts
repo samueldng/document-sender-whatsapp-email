@@ -21,7 +21,8 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     handleDeleteFile,
     loadMoreFiles,
     hasMoreFiles,
-    resetPagination
+    resetPagination,
+    getFileByPath
   } = useFileManagement({ 
     selectedClient, 
     documentType 
@@ -76,5 +77,6 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     handleDeleteFile,
     handleForceRefresh,
     loadMoreFiles,
+    getFileByPath
   };
 }

@@ -1,12 +1,15 @@
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { LoaderIcon, UploadIcon } from "lucide-react";
+import { LoaderIcon, UploadIcon, MailIcon, MessageSquare } from "lucide-react";
 import { Client, DocumentType } from "@/types/client";
 import UploadArea from "./UploadArea";
 import FilesList from "./FilesList";
 import { useAutoUpload } from "./useAutoUpload";
+import { useSendDocument } from "@/hooks/useDocumentSender";
+import { useDocumentSender } from "@/contexts/DocumentSenderContext";
+import { useToast } from "@/hooks/use-toast";
 
 interface AutoUploadProps {
   selectedClient: Client | null;
@@ -14,6 +17,11 @@ interface AutoUploadProps {
 }
 
 export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [isSending, setIsSending] = useState(false);
+  const { setIsLoading } = useDocumentSender();
+  const { toast } = useToast();
+  
   const { 
     isLoadingFiles, 
     uploadedFiles, 
@@ -24,6 +32,46 @@ export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
     hasMoreFiles,
     isLoading
   } = useAutoUpload({ selectedClient, documentType });
+
+  const { handleSendUploadedFiles } = useSendDocument();
+
+  const handleSelectFile = (path: string, isSelected: boolean) => {
+    if (isSelected) {
+      setSelectedFiles(prev => [...prev, path]);
+    } else {
+      setSelectedFiles(prev => prev.filter(p => p !== path));
+    }
+  };
+
+  const handleSendSelectedFiles = async (method: "email" | "whatsapp") => {
+    if (selectedFiles.length === 0 || !selectedClient) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione pelo menos um arquivo",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsSending(true);
+    setIsLoading(true);
+    
+    try {
+      // Find the selected files from uploadedFiles
+      const filesToSend = uploadedFiles.filter(file => selectedFiles.includes(file.path));
+      
+      // Send the selected files using our new method
+      await handleSendUploadedFiles(method, filesToSend);
+      
+      // Clear selection after sending
+      setSelectedFiles([]);
+    } catch (error) {
+      console.error("Error sending files:", error);
+    } finally {
+      setIsSending(false);
+      setIsLoading(false);
+    }
+  };
 
   return (
     <Card className="p-4 mt-4">
@@ -61,7 +109,33 @@ export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
           hasMoreFiles={hasMoreFiles}
           onLoadMore={loadMoreFiles}
           isLoadingMore={isLoadingFiles && uploadedFiles.length > 0}
+          selectable={true}
+          selectedFiles={selectedFiles}
+          onSelectFile={handleSelectFile}
         />
+        
+        {selectedFiles.length > 0 && (
+          <div className="animate-fadeIn">
+            <div className="flex gap-2 mt-4">
+              <Button
+                className="flex-1"
+                onClick={() => handleSendSelectedFiles("email")}
+                disabled={isSending || selectedFiles.length === 0}
+              >
+                <MailIcon className="mr-2 h-4 w-4" />
+                Enviar por Email
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => handleSendSelectedFiles("whatsapp")}
+                disabled={isSending || selectedFiles.length === 0}
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Enviar por WhatsApp
+              </Button>
+            </div>
+          </div>
+        )}
         
         <div className="bg-gray-50 p-4 rounded-lg">
           <h4 className="text-md font-medium mb-2">Automatic Folder Monitoring</h4>

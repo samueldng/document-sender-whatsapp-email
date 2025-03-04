@@ -1,6 +1,7 @@
 
 import { ExternalLinkIcon, FileIcon, LoaderIcon, Trash2Icon, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export interface UploadedFile {
   name: string;
@@ -16,6 +17,9 @@ interface FilesListProps {
   hasMoreFiles?: boolean;
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
+  selectable?: boolean;
+  selectedFiles?: string[];
+  onSelectFile?: (path: string, isSelected: boolean) => void;
 }
 
 export default function FilesList({ 
@@ -24,7 +28,10 @@ export default function FilesList({
   onDelete, 
   hasMoreFiles = false,
   onLoadMore,
-  isLoadingMore = false
+  isLoadingMore = false,
+  selectable = false,
+  selectedFiles = [],
+  onSelectFile
 }: FilesListProps) {
   return (
     <div className="mt-6">
@@ -44,6 +51,13 @@ export default function FilesList({
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-center space-x-3 overflow-hidden">
+                  {selectable && onSelectFile && (
+                    <Checkbox 
+                      checked={selectedFiles.includes(file.path)}
+                      onCheckedChange={(checked) => onSelectFile(file.path, !!checked)}
+                      className="ml-1"
+                    />
+                  )}
                   <FileIcon className="h-5 w-5 flex-shrink-0 text-blue-500" />
                   <div className="truncate">
                     <p className="font-medium text-sm truncate">{file.name}</p>

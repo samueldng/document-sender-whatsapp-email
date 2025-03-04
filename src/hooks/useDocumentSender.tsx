@@ -38,6 +38,77 @@ export function useSendDocument() {
     }
   };
 
+  // New method to send files that are already uploaded (from auto upload)
+  const handleSendUploadedFiles = async (
+    method: "email" | "whatsapp", 
+    uploadedFiles: {path: string, name: string, url: string}[]
+  ) => {
+    if (!selectedClient || !uploadedFiles || uploadedFiles.length === 0) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione um cliente e arquivos primeiro",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Ensure documents bucket exists
+      await ensureBucketExists('documents');
+
+      // Proceed with sending already uploaded files
+      for (const file of uploadedFiles) {
+        if (method === "email") {
+          const sendResponse = await supabase.functions.invoke('send-document', {
+            body: {
+              clientEmail: selectedClient.email,
+              clientName: selectedClient.name,
+              documentType,
+              filePath: file.path,
+              fileName: file.name,
+            },
+          });
+
+          if (sendResponse.error || !sendResponse.data) {
+            console.error("Erro ao enviar email:", sendResponse.error);
+            throw new Error('Falha ao enviar email');
+          }
+        } else if (method === "whatsapp") {
+          const sendResponse = await supabase.functions.invoke('send-whatsapp', {
+            body: {
+              clientPhone: selectedClient.whatsapp,
+              clientName: selectedClient.name,
+              documentType,
+              publicUrl: file.url,
+              fileName: file.name,
+            },
+          });
+
+          if (sendResponse.error || !sendResponse.data) {
+            console.error("Erro ao enviar WhatsApp:", sendResponse.error);
+            throw new Error('Falha ao enviar WhatsApp');
+          }
+        }
+      }
+
+      toast({
+        title: "Sucesso",
+        description: `${uploadedFiles.length} documento(s) ${method === 'email' ? 'enviado(s) por email' : 'enviado(s) por WhatsApp'}`,
+      });
+    } catch (error) {
+      console.error('Error handling documents:', error);
+      toast({
+        title: "Erro",
+        description: `Erro ao ${method === 'email' ? 'enviar email' : 'enviar WhatsApp'}: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSend = async (method: "email" | "whatsapp") => {
     if (!selectedClient || !files) {
       toast({
@@ -141,5 +212,5 @@ export function useSendDocument() {
     }
   };
 
-  return { handleUpload, handleSend };
+  return { handleUpload, handleSend, handleSendUploadedFiles };
 }
