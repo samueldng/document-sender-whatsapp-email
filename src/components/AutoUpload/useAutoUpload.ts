@@ -86,7 +86,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       
       // Map database documents to files with URLs
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
-        // Get public URL
+        // Get public URL - the document doesn't have a URL property, so we need to get it
         const { data: urlData } = await supabase.storage
           .from('documents')
           .getPublicUrl(doc.file_path);
@@ -94,7 +94,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
         return {
           name: doc.filename, // Use the original filename from DB
           path: doc.file_path,
-          url: doc.url || urlData.publicUrl,
+          url: urlData.publicUrl, // Use the publicUrl from getPublicUrl instead of doc.url
           created_at: doc.created_at
         };
       }));
