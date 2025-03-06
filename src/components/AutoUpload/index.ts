@@ -1,4 +1,4 @@
 
-import { AutoUpload } from './AutoUpload';
+import AutoUpload from './AutoUpload';
 
 export default AutoUpload;

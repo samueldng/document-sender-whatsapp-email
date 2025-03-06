@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -117,13 +118,13 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
         try {
-          const { data: urlData, error: urlError } = await supabase.storage
+          const { data: urlData } = await supabase.storage
             .from('documents')
             .getPublicUrl(doc.file_path);
             
-          if (urlError) {
-            console.error("Error getting URL for file:", urlError);
-            throw urlError;
+          // The getPublicUrl method doesn't return an error property, so we check for urlData
+          if (!urlData || !urlData.publicUrl) {
+            throw new Error("Failed to get public URL");
           }
           
           return {

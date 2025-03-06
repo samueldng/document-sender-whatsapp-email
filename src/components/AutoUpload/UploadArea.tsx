@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 
 interface UploadAreaProps {
   isLoading: boolean;
-  onFileSelect: (files: FileList) => void;
+  handleUpload: (files: FileList) => void;
+  disabled?: boolean;
 }
 
-export default function UploadArea({ isLoading, onFileSelect }: UploadAreaProps) {
+export default function UploadArea({ isLoading, handleUpload, disabled = false }: UploadAreaProps) {
   return (
     <div className="relative border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center">
       <FolderIcon className="h-12 w-12 text-gray-400 mb-2" />
@@ -18,14 +19,14 @@ export default function UploadArea({ isLoading, onFileSelect }: UploadAreaProps)
         type="file"
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         multiple
-        onChange={(e) => e.target.files && onFileSelect(e.target.files)}
-        disabled={isLoading}
+        onChange={(e) => e.target.files && handleUpload(e.target.files)}
+        disabled={isLoading || disabled}
       />
       <Button 
         variant="outline" 
         size="sm" 
         className="mt-2"
-        disabled={isLoading}
+        disabled={isLoading || disabled}
       >
         {isLoading ? (
           <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
