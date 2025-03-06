@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +7,11 @@ import { UploadedFile } from "../FilesList";
 import { useBucketManagement } from "./useBucketManagement";
 
 const ITEMS_PER_PAGE = 10;
+
+interface UseFileManagementProps {
+  selectedClient: Client | null;
+  documentType: DocumentType;
+}
 
 export function useFileManagement({ selectedClient, documentType }: UseFileManagementProps) {
   const { toast } = useToast();
