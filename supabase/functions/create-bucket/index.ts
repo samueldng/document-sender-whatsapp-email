@@ -25,7 +25,10 @@ serve(async (req) => {
     if (!bucketName) {
       console.error("No bucket name provided");
       return new Response(
-        JSON.stringify({ error: "bucketName is required" }),
+        JSON.stringify({ 
+          success: false,
+          error: "bucketName is required" 
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -57,15 +60,31 @@ serve(async (req) => {
       );
     }
 
-    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+    // Check if buckets is undefined or null
+    if (!buckets) {
+      console.error("Buckets response is undefined or null");
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Buckets response is undefined or null" 
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const documentsBucket = buckets.find(bucket => bucket.name === bucketName);
     
-    if (bucketExists) {
-      console.log(`Bucket '${bucketName}' already exists`);
+    if (documentsBucket) {
+      console.log(`Bucket '${bucketName}' already exists:`, documentsBucket);
       return new Response(
         JSON.stringify({ 
           success: true,
           message: `Bucket '${bucketName}' already exists and is ready to use`,
-          bucket: bucketName 
+          bucket: bucketName,
+          details: documentsBucket
         }),
         {
           status: 200,
@@ -99,7 +118,7 @@ serve(async (req) => {
     }
 
     // Wait a bit to ensure bucket is created
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Verify bucket was created
     const { data: verifyBuckets, error: verifyError } = await supabaseAdmin.storage.listBuckets();
@@ -119,9 +138,23 @@ serve(async (req) => {
       );
     }
 
-    const bucketCreated = verifyBuckets?.some(bucket => bucket.name === bucketName);
+    if (!verifyBuckets) {
+      console.error("Verify buckets response is undefined or null");
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Verify buckets response is undefined or null" 
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const verifiedBucket = verifyBuckets.find(bucket => bucket.name === bucketName);
     
-    if (!bucketCreated) {
+    if (!verifiedBucket) {
       console.error(`Failed to verify bucket '${bucketName}' creation`);
       return new Response(
         JSON.stringify({ 
@@ -135,7 +168,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Successfully created bucket: ${bucketName}`);
+    console.log(`Successfully created bucket: ${bucketName}`, verifiedBucket);
 
     // Create public access policies
     try {
@@ -151,7 +184,8 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         message: `Bucket '${bucketName}' created successfully`,
-        bucket: bucketName
+        bucket: bucketName,
+        details: verifiedBucket
       }),
       {
         status: 200,

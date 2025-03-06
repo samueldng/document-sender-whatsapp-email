@@ -17,6 +17,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
 
   const { 
     checkAndCreateBucket,
+    checkBucketExists,
     isCheckingBucket
   } = useBucketManagement();
 
@@ -64,7 +65,15 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   
   // Initial load and periodic refresh
   useEffect(() => {
-    loadUploadedFiles();
+    const loadFiles = async () => {
+      // Check if bucket exists first
+      const bucketExists = await checkBucketExists();
+      if (bucketExists) {
+        loadUploadedFiles();
+      }
+    };
+    
+    loadFiles();
     
     // Set up interval to refresh files periodically, but don't force refresh
     // to use the cache when available
@@ -73,7 +82,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     }, 60000); // Refresh every 60 seconds
     
     return () => clearInterval(intervalId);
-  }, [loadUploadedFiles, refreshTrigger]);
+  }, [loadUploadedFiles, refreshTrigger, checkBucketExists]);
 
   // Function to manually check and create bucket
   const checkBucket = useCallback(async () => {
@@ -85,6 +94,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
         description: "Armazenamento preparado com sucesso",
       });
     }
+    return success;
   }, [checkAndCreateBucket, loadUploadedFiles, toast]);
 
   return {

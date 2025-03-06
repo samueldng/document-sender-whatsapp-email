@@ -23,10 +23,16 @@ export function useBucketManagement() {
         throw new Error(`Falha ao verificar buckets: ${listError.message}`);
       }
       
-      const bucketExists = buckets?.some(bucket => bucket.name === 'documents');
+      // Check if buckets response is valid and contains the documents bucket
+      if (!buckets) {
+        console.error("Resposta de buckets vazia ou inválida");
+        throw new Error("Resposta de buckets inválida");
+      }
       
-      if (bucketExists) {
-        console.log("Bucket 'documents' já existe");
+      const documentsBucket = buckets.find(bucket => bucket.name === 'documents');
+      
+      if (documentsBucket) {
+        console.log("Bucket 'documents' encontrado:", documentsBucket);
         setIsBucketReady(true);
         return true;
       }
@@ -38,10 +44,15 @@ export function useBucketManagement() {
         body: { bucketName: 'documents' }
       });
       
+      console.log("Resposta da edge function create-bucket:", response);
+      
       if (!response.data?.success) {
         console.error("Erro ao criar bucket:", response.error || response.data);
         throw new Error(`Falha ao criar bucket: ${response.error?.message || 'resposta inválida'}`);
       }
+      
+      // Delay verification to ensure bucket creation has propagated
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       // Double-check that bucket was created successfully
       const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
@@ -51,13 +62,18 @@ export function useBucketManagement() {
         throw new Error(`Falha ao verificar criação do bucket: ${verifyError.message}`);
       }
       
-      const bucketCreated = verifyBuckets?.some(bucket => bucket.name === 'documents');
+      if (!verifyBuckets) {
+        throw new Error("Resposta de verificação inválida");
+      }
       
-      if (!bucketCreated) {
+      const verifiedBucket = verifyBuckets.find(bucket => bucket.name === 'documents');
+      
+      if (!verifiedBucket) {
+        console.error("Bucket não encontrado após tentativa de criação");
         throw new Error("Bucket não foi criado corretamente");
       }
       
-      console.log("Bucket 'documents' foi criado com sucesso e está pronto para uso");
+      console.log("Bucket 'documents' foi criado com sucesso e está pronto para uso:", verifiedBucket);
       setIsBucketReady(true);
       return true;
     } catch (error) {
@@ -66,7 +82,7 @@ export function useBucketManagement() {
       // Retry logic
       if (retryCount > 0) {
         console.log(`Tentando novamente (${retryCount} tentativas restantes)...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5 seconds before retry
         return checkAndCreateBucket(retryCount - 1);
       }
       
@@ -82,9 +98,32 @@ export function useBucketManagement() {
     }
   }, [toast]);
 
+  // Check if the bucket exists without attempting to create it
+  const checkBucketExists = useCallback(async () => {
+    try {
+      const { data: buckets, error } = await supabase.storage.listBuckets();
+      
+      if (error) {
+        console.error("Erro ao listar buckets:", error);
+        return false;
+      }
+      
+      if (!buckets) {
+        return false;
+      }
+      
+      return buckets.some(bucket => bucket.name === 'documents');
+    } catch (error) {
+      console.error("Erro ao verificar existência do bucket:", error);
+      return false;
+    }
+  }, []);
+
   return {
     checkAndCreateBucket,
+    checkBucketExists,
     isBucketReady,
-    isCheckingBucket
+    isCheckingBucket,
+    setIsBucketReady
   };
 }

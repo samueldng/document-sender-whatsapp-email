@@ -21,17 +21,37 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
   const [currentPage, setCurrentPage] = useState(0);
   const [bucketError, setBucketError] = useState<string | null>(null);
   const cachedFilesRef = useRef<{[key: string]: UploadedFile[]}>({});
-  const { checkAndCreateBucket } = useBucketManagement();
+  
+  const { 
+    checkAndCreateBucket, 
+    checkBucketExists,
+    isCheckingBucket 
+  } = useBucketManagement();
 
+  // Check bucket on component mount
   useEffect(() => {
-    checkAndCreateBucket().then(success => {
-      if (!success) {
-        setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
-      } else {
-        setBucketError(null);
+    const initializeBucket = async () => {
+      try {
+        const bucketExists = await checkBucketExists();
+        
+        if (!bucketExists) {
+          const success = await checkAndCreateBucket();
+          if (!success) {
+            setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+          } else {
+            setBucketError(null);
+          }
+        } else {
+          setBucketError(null);
+        }
+      } catch (error) {
+        console.error("Erro ao inicializar bucket:", error);
+        setBucketError("Não foi possível verificar o armazenamento. Tente novamente mais tarde.");
       }
-    });
-  }, [checkAndCreateBucket]);
+    };
+    
+    initializeBucket();
+  }, [checkAndCreateBucket, checkBucketExists]);
 
   const getCacheKey = useCallback(() => {
     return `${selectedClient?.id || 'all'}_${documentType}`;
@@ -72,12 +92,17 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         return;
       }
       
-      const bucketReady = await checkAndCreateBucket();
-      if (!bucketReady) {
-        console.error("Bucket not ready, cannot load files");
-        setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
-        setIsLoadingFiles(false);
-        return;
+      // Check if bucket exists before proceeding
+      const bucketExists = await checkBucketExists();
+      
+      if (!bucketExists) {
+        const bucketReady = await checkAndCreateBucket();
+        if (!bucketReady) {
+          console.error("Bucket not ready, cannot load files");
+          setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+          setIsLoadingFiles(false);
+          return;
+        }
       }
       
       const offset = currentPage * ITEMS_PER_PAGE;
@@ -113,8 +138,6 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         setIsLoadingFiles(false);
         return;
       }
-      
-      await checkAndCreateBucket();
       
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
         try {
@@ -161,7 +184,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
+  }, [checkAndCreateBucket, checkBucketExists, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
 
   const loadMoreFiles = useCallback(() => {
     if (isLoadingFiles || !hasMoreFiles) return;

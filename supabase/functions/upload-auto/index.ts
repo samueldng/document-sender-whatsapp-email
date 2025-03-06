@@ -53,9 +53,17 @@ serve(async (req) => {
       )
     }
     
-    const bucketExists = buckets?.some(bucket => bucket.name === 'documents');
+    if (!buckets) {
+      console.error("Buckets response is undefined or null");
+      return new Response(
+        JSON.stringify({ error: 'Buckets response is undefined or null' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
+    }
     
-    if (!bucketExists) {
+    const documentsBucket = buckets.find(bucket => bucket.name === 'documents');
+    
+    if (!documentsBucket) {
       console.log("Documents bucket doesn't exist, creating it");
       
       const { data: createData, error: createError } = await supabase.storage.createBucket(
@@ -71,9 +79,32 @@ serve(async (req) => {
         )
       }
       
-      console.log("Documents bucket created successfully");
+      // Verify the bucket was created
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait to ensure bucket is registered
+      
+      const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
+      
+      if (verifyError) {
+        console.error("Error verifying bucket creation:", verifyError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to verify bucket creation', details: verifyError }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+        )
+      }
+      
+      const verifiedBucket = verifyBuckets?.find(bucket => bucket.name === 'documents');
+      
+      if (!verifiedBucket) {
+        console.error("Bucket not found after creation attempt");
+        return new Response(
+          JSON.stringify({ error: 'Bucket not created successfully' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+        )
+      }
+      
+      console.log("Documents bucket created successfully:", verifiedBucket);
     } else {
-      console.log("Documents bucket already exists");
+      console.log("Documents bucket already exists:", documentsBucket);
     }
 
     // Sanitize filename to avoid problematic characters
@@ -108,6 +139,14 @@ serve(async (req) => {
     const { data: publicUrlData } = await supabase.storage
       .from('documents')
       .getPublicUrl(filePath)
+
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      console.error("Failed to get public URL for uploaded file");
+      return new Response(
+        JSON.stringify({ error: 'Failed to get public URL for uploaded file' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
+    }
 
     // Record the document in the database
     try {
