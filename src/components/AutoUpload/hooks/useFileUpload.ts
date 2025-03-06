@@ -26,7 +26,7 @@ export function useFileUpload({
       // Make sure bucket exists before attempting upload
       const bucketReady = await checkAndCreateBucket();
       if (!bucketReady) {
-        throw new Error("Não foi possível criar ou verificar o bucket");
+        throw new Error("Não foi possível preparar o armazenamento para upload");
       }
       
       let successCount = 0;

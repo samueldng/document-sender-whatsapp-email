@@ -6,9 +6,12 @@ import { supabase } from "@/integrations/supabase/client";
 export function useBucketManagement() {
   const { toast } = useToast();
   const [isBucketReady, setIsBucketReady] = useState(false);
+  const [isCheckingBucket, setIsCheckingBucket] = useState(false);
   
   // Verify and create bucket if necessary with retry mechanism
   const checkAndCreateBucket = useCallback(async (retryCount = 3) => {
+    setIsCheckingBucket(true);
+    
     try {
       console.log("Verificando existência do bucket 'documents'");
       
@@ -74,11 +77,14 @@ export function useBucketManagement() {
       });
       setIsBucketReady(false);
       return false;
+    } finally {
+      setIsCheckingBucket(false);
     }
   }, [toast]);
 
   return {
     checkAndCreateBucket,
-    isBucketReady
+    isBucketReady,
+    isCheckingBucket
   };
 }

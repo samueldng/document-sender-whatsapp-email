@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Client, DocumentType } from "@/types/client";
 import { useFileManagement } from "./hooks/useFileManagement";
 import { useFileUpload } from "./hooks/useFileUpload";
+import { useBucketManagement } from "./hooks/useBucketManagement";
 
 interface UseAutoUploadProps {
   selectedClient: Client | null;
@@ -13,6 +14,11 @@ interface UseAutoUploadProps {
 export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadProps) {
   const { toast } = useToast();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const { 
+    checkAndCreateBucket,
+    isCheckingBucket
+  } = useBucketManagement();
 
   const { 
     isLoadingFiles, 
@@ -69,8 +75,20 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     return () => clearInterval(intervalId);
   }, [loadUploadedFiles, refreshTrigger]);
 
+  // Function to manually check and create bucket
+  const checkBucket = useCallback(async () => {
+    const success = await checkAndCreateBucket();
+    if (success) {
+      loadUploadedFiles(true);
+      toast({
+        title: "Sucesso",
+        description: "Armazenamento preparado com sucesso",
+      });
+    }
+  }, [checkAndCreateBucket, loadUploadedFiles, toast]);
+
   return {
-    isLoading,
+    isLoading: isLoading || isCheckingBucket,
     isLoadingFiles,
     uploadedFiles,
     hasMoreFiles,
@@ -79,6 +97,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     handleForceRefresh,
     loadMoreFiles,
     getFileByPath,
-    bucketError
+    bucketError,
+    checkBucket
   };
 }
