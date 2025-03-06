@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -249,6 +248,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     hasMoreFiles,
     resetPagination,
     getFileByPath,
-    bucketError
+    bucketError,
+    setBucketError
   };
 }

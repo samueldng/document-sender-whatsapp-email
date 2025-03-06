@@ -78,7 +78,17 @@ serve(async (req) => {
     const documentsBucket = buckets.find(bucket => bucket.name === bucketName);
     
     if (documentsBucket) {
-      console.log(`Bucket '${bucketName}' already exists:`, documentsBucket);
+      console.log(`Bucket '${bucketName}' already exists`);
+      
+      // Even if the bucket exists, try to make it public
+      try {
+        await supabaseAdmin.storage.from(bucketName).setPublic(true);
+        console.log(`Ensured public access for existing bucket: ${bucketName}`);
+      } catch (policyError) {
+        console.error("Warning: Error setting bucket policy (but bucket exists):", policyError);
+        // Continue despite policy error since bucket exists
+      }
+      
       return new Response(
         JSON.stringify({ 
           success: true,
@@ -103,6 +113,22 @@ serve(async (req) => {
     });
 
     if (error) {
+      // Check if error is because bucket already exists
+      if (error.message.includes("already exists")) {
+        console.log(`Bucket '${bucketName}' already exists (from error message)`);
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            message: `Bucket '${bucketName}' already exists and is ready to use`,
+            bucket: bucketName
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
       console.error("Error creating bucket:", error);
       return new Response(
         JSON.stringify({ 
@@ -118,7 +144,7 @@ serve(async (req) => {
     }
 
     // Wait a bit to ensure bucket is created
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Verify bucket was created
     const { data: verifyBuckets, error: verifyError } = await supabaseAdmin.storage.listBuckets();

@@ -29,7 +29,8 @@ export default function AutoUpload({ selectedClient, documentType }: AutoUploadP
     loadMoreFiles,
     getFileByPath,
     bucketError,
-    checkBucket
+    checkBucket,
+    isBucketReady
   } = useAutoUpload({
     selectedClient,
     documentType
@@ -112,7 +113,7 @@ export default function AutoUpload({ selectedClient, documentType }: AutoUploadP
       <UploadArea 
         handleUpload={handleUploadTest} 
         isLoading={isLoading} 
-        disabled={!!bucketError}
+        disabled={!isBucketReady}
       />
       
       <FilesList

@@ -14,11 +14,13 @@ interface UseAutoUploadProps {
 export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadProps) {
   const { toast } = useToast();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [attemptedBucketCreation, setAttemptedBucketCreation] = useState(false);
 
   const { 
     checkAndCreateBucket,
     checkBucketExists,
-    isCheckingBucket
+    isCheckingBucket,
+    isBucketReady
   } = useBucketManagement();
 
   const { 
@@ -30,7 +32,8 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     hasMoreFiles,
     resetPagination,
     getFileByPath,
-    bucketError
+    bucketError,
+    setBucketError
   } = useFileManagement({ 
     selectedClient, 
     documentType 
@@ -66,10 +69,26 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   // Initial load and periodic refresh
   useEffect(() => {
     const loadFiles = async () => {
-      // Check if bucket exists first
-      const bucketExists = await checkBucketExists();
-      if (bucketExists) {
-        loadUploadedFiles();
+      try {
+        // Check if bucket exists first
+        const bucketExists = await checkBucketExists();
+        if (bucketExists) {
+          loadUploadedFiles();
+          // If we have a previous bucket error but the bucket now exists, clear the error
+          if (bucketError) {
+            setBucketError(null);
+          }
+        } else if (!attemptedBucketCreation) {
+          // Attempt to create the bucket if it doesn't exist and we haven't tried yet
+          setAttemptedBucketCreation(true);
+          const success = await checkAndCreateBucket();
+          if (success) {
+            loadUploadedFiles();
+            setBucketError(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error in loadFiles:", error);
       }
     };
     
@@ -82,20 +101,22 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     }, 60000); // Refresh every 60 seconds
     
     return () => clearInterval(intervalId);
-  }, [loadUploadedFiles, refreshTrigger, checkBucketExists]);
+  }, [loadUploadedFiles, refreshTrigger, checkBucketExists, checkAndCreateBucket, bucketError, setBucketError, attemptedBucketCreation]);
 
   // Function to manually check and create bucket
   const checkBucket = useCallback(async () => {
+    setAttemptedBucketCreation(true);
     const success = await checkAndCreateBucket();
     if (success) {
       loadUploadedFiles(true);
+      setBucketError(null);
       toast({
         title: "Sucesso",
         description: "Armazenamento preparado com sucesso",
       });
     }
     return success;
-  }, [checkAndCreateBucket, loadUploadedFiles, toast]);
+  }, [checkAndCreateBucket, loadUploadedFiles, toast, setBucketError]);
 
   return {
     isLoading: isLoading || isCheckingBucket,
@@ -108,6 +129,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     loadMoreFiles,
     getFileByPath,
     bucketError,
-    checkBucket
+    checkBucket,
+    isBucketReady
   };
 }
