@@ -1,5 +1,4 @@
-
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Client, DocumentType } from "@/types/client";
@@ -19,8 +18,19 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [hasMoreFiles, setHasMoreFiles] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
+  const [bucketError, setBucketError] = useState<string | null>(null);
   const cachedFilesRef = useRef<{[key: string]: UploadedFile[]}>({});
   const { checkAndCreateBucket } = useBucketManagement();
+
+  useEffect(() => {
+    checkAndCreateBucket().then(success => {
+      if (!success) {
+        setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+      } else {
+        setBucketError(null);
+      }
+    });
+  }, [checkAndCreateBucket]);
 
   const getCacheKey = useCallback(() => {
     return `${selectedClient?.id || 'all'}_${documentType}`;
@@ -37,6 +47,11 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
   }, [getCacheKey]);
 
   const loadUploadedFiles = useCallback(async (forceRefresh = false) => {
+    if (bucketError) {
+      console.error("Cannot load files due to bucket error:", bucketError);
+      return;
+    }
+    
     setIsLoadingFiles(true);
     
     try {
@@ -52,12 +67,15 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       
       if (cachedFilesRef.current[cacheKey] && uploadedFiles.length > 0 && !forceRefresh) {
         console.log("Using cached files");
+        setIsLoadingFiles(false);
         return;
       }
       
       const bucketReady = await checkAndCreateBucket();
       if (!bucketReady) {
         console.error("Bucket not ready, cannot load files");
+        setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+        setIsLoadingFiles(false);
         return;
       }
       
@@ -91,20 +109,38 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         if (currentPage === 0) {
           setUploadedFiles([]);
         }
+        setIsLoadingFiles(false);
         return;
       }
       
+      await checkAndCreateBucket();
+      
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
-        const { data: urlData } = await supabase.storage
-          .from('documents')
-          .getPublicUrl(doc.file_path);
+        try {
+          const { data: urlData, error: urlError } = await supabase.storage
+            .from('documents')
+            .getPublicUrl(doc.file_path);
+            
+          if (urlError) {
+            console.error("Error getting URL for file:", urlError);
+            throw urlError;
+          }
           
-        return {
-          name: doc.filename,
-          path: doc.file_path,
-          url: urlData.publicUrl,
-          created_at: doc.created_at
-        };
+          return {
+            name: doc.filename,
+            path: doc.file_path,
+            url: urlData.publicUrl,
+            created_at: doc.created_at
+          };
+        } catch (error) {
+          console.error(`Error getting URL for file ${doc.filename}:`, error);
+          return {
+            name: doc.filename,
+            path: doc.file_path,
+            url: '#error-loading-url',
+            created_at: doc.created_at
+          };
+        }
       }));
       
       setUploadedFiles(prevFiles => 
@@ -117,14 +153,14 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     } catch (error) {
       console.error('Error loading files:', error);
       toast({
-        title: "Error",
-        description: `Failed to load uploaded files: ${error.message}`,
+        title: "Erro",
+        description: `Falha ao carregar arquivos: ${error.message}`,
         variant: "destructive",
       });
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length]);
+  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
 
   const loadMoreFiles = useCallback(() => {
     if (isLoadingFiles || !hasMoreFiles) return;
@@ -163,14 +199,14 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       });
       
       toast({
-        title: "Success",
-        description: "File deleted successfully",
+        title: "Sucesso",
+        description: "Arquivo deletado com sucesso",
       });
     } catch (error) {
       console.error('Error deleting file:', error);
       toast({
-        title: "Error",
-        description: "Failed to delete the file",
+        title: "Erro",
+        description: "Falha ao deletar o arquivo",
         variant: "destructive",
       });
     }
@@ -188,6 +224,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     loadMoreFiles,
     hasMoreFiles,
     resetPagination,
-    getFileByPath
+    getFileByPath,
+    bucketError
   };
 }

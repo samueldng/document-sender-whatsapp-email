@@ -22,7 +22,8 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     loadMoreFiles,
     hasMoreFiles,
     resetPagination,
-    getFileByPath
+    getFileByPath,
+    bucketError
   } = useFileManagement({ 
     selectedClient, 
     documentType 
@@ -31,8 +32,8 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   const handleForceRefresh = useCallback(() => {
     loadUploadedFiles(true); // true means force refresh, ignore cache
     toast({
-      title: "Updating",
-      description: "Updating file list...",
+      title: "Atualizando",
+      description: "Atualizando lista de arquivos...",
     });
   }, [loadUploadedFiles, toast]);
 
@@ -63,7 +64,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     // to use the cache when available
     const intervalId = setInterval(() => {
       setRefreshTrigger(prev => prev + 1);
-    }, 60000); // Refresh every 60 seconds instead of 30 to reduce API calls
+    }, 60000); // Refresh every 60 seconds
     
     return () => clearInterval(intervalId);
   }, [loadUploadedFiles, refreshTrigger]);
@@ -77,6 +78,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     handleDeleteFile,
     handleForceRefresh,
     loadMoreFiles,
-    getFileByPath
+    getFileByPath,
+    bucketError
   };
 }

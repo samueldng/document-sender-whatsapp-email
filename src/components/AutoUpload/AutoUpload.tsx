@@ -1,151 +1,134 @@
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { LoaderIcon, UploadIcon, MailIcon, MessageSquare } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 import { Client, DocumentType } from "@/types/client";
 import UploadArea from "./UploadArea";
 import FilesList from "./FilesList";
 import { useAutoUpload } from "./useAutoUpload";
 import { useSendDocument } from "@/hooks/useDocumentSender";
-import { useDocumentSender } from "@/contexts/DocumentSenderContext";
-import { useToast } from "@/hooks/use-toast";
+import { Button } from "../ui/button";
+import { MailIcon, MessageSquare, RefreshCwIcon } from "lucide-react";
 
 interface AutoUploadProps {
-  selectedClient: Client | null;
+  selectedClient: Client;
   documentType: DocumentType;
 }
 
-export function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
+export default function AutoUpload({ selectedClient, documentType }: AutoUploadProps) {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [isSending, setIsSending] = useState(false);
-  const { setIsLoading } = useDocumentSender();
-  const { toast } = useToast();
+  const { handleSendUploadedFiles } = useSendDocument();
   
-  const { 
-    isLoadingFiles, 
-    uploadedFiles, 
-    handleUploadTest, 
+  const {
+    isLoading,
+    isLoadingFiles,
+    uploadedFiles,
+    hasMoreFiles,
+    handleUploadTest,
     handleDeleteFile,
     handleForceRefresh,
     loadMoreFiles,
-    hasMoreFiles,
-    isLoading
-  } = useAutoUpload({ selectedClient, documentType });
-
-  const { handleSendUploadedFiles } = useSendDocument();
+    getFileByPath,
+    bucketError
+  } = useAutoUpload({
+    selectedClient,
+    documentType
+  });
 
   const handleSelectFile = (path: string, isSelected: boolean) => {
-    if (isSelected) {
-      setSelectedFiles(prev => [...prev, path]);
-    } else {
-      setSelectedFiles(prev => prev.filter(p => p !== path));
-    }
+    setSelectedFiles(prev => {
+      if (isSelected) {
+        return [...prev, path];
+      } else {
+        return prev.filter(p => p !== path);
+      }
+    });
   };
 
-  const handleSendSelectedFiles = async (method: "email" | "whatsapp") => {
-    if (selectedFiles.length === 0 || !selectedClient) {
-      toast({
-        title: "Erro",
-        description: "Por favor, selecione pelo menos um arquivo",
-        variant: "destructive",
-      });
-      return;
-    }
+  const handleSendSelected = async (method: "email" | "whatsapp") => {
+    if (selectedFiles.length === 0) return;
     
-    setIsSending(true);
-    setIsLoading(true);
-    
-    try {
-      // Find the selected files from uploadedFiles
-      const filesToSend = uploadedFiles.filter(file => selectedFiles.includes(file.path));
+    const filesToSend = selectedFiles
+      .map(path => getFileByPath(path))
+      .filter(Boolean);
       
-      // Send the selected files using our new method
-      await handleSendUploadedFiles(method, filesToSend);
-      
-      // Clear selection after sending
-      setSelectedFiles([]);
-    } catch (error) {
-      console.error("Error sending files:", error);
-    } finally {
-      setIsSending(false);
-      setIsLoading(false);
-    }
+    await handleSendUploadedFiles(method, filesToSend);
+    setSelectedFiles([]);
   };
 
   return (
-    <Card className="p-4 mt-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Automatic Upload</h3>
-        <Button 
-          variant="outline" 
-          size="sm"
+    <div className="space-y-4">
+      {bucketError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Erro de armazenamento</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <p>{bucketError}</p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-fit" 
+              onClick={handleForceRefresh}
+            >
+              <RefreshCwIcon className="mr-2 h-4 w-4" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      <UploadArea 
+        handleUpload={handleUploadTest} 
+        isLoading={isLoading} 
+        disabled={!!bucketError} 
+      />
+      
+      {selectedFiles.length > 0 && (
+        <div className="my-4 p-4 bg-secondary rounded-lg">
+          <p className="mb-2 font-medium">{selectedFiles.length} arquivo(s) selecionado(s)</p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => handleSendSelected("email")}
+            >
+              <MailIcon className="mr-2 h-4 w-4" />
+              Enviar por Email
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => handleSendSelected("whatsapp")}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Enviar por WhatsApp
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      <FilesList 
+        files={uploadedFiles} 
+        isLoading={isLoadingFiles} 
+        onDelete={handleDeleteFile}
+        hasMoreFiles={hasMoreFiles}
+        onLoadMore={loadMoreFiles}
+        selectable={true}
+        selectedFiles={selectedFiles}
+        onSelectFile={handleSelectFile}
+      />
+      
+      <div className="text-center">
+        <Button
+          variant="outline"
           onClick={handleForceRefresh}
-          disabled={isLoadingFiles}
+          size="sm"
+          className="mt-2"
         >
-          {isLoadingFiles ? (
-            <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <UploadIcon className="h-4 w-4 mr-2" />
-          )}
-          Refresh List
+          <RefreshCwIcon className="mr-2 h-4 w-4" />
+          Atualizar Lista
         </Button>
       </div>
-      
-      <div className="space-y-4">
-        <p className="text-sm text-gray-600">
-          To test manual upload of a file to the monitored folder:
-        </p>
-        
-        <UploadArea 
-          isLoading={isLoading} 
-          onFileSelect={handleUploadTest} 
-        />
-        
-        <FilesList 
-          files={uploadedFiles}
-          isLoading={isLoadingFiles}
-          onDelete={handleDeleteFile}
-          hasMoreFiles={hasMoreFiles}
-          onLoadMore={loadMoreFiles}
-          isLoadingMore={isLoadingFiles && uploadedFiles.length > 0}
-          selectable={true}
-          selectedFiles={selectedFiles}
-          onSelectFile={handleSelectFile}
-        />
-        
-        {selectedFiles.length > 0 && (
-          <div className="animate-fadeIn">
-            <div className="flex gap-2 mt-4">
-              <Button
-                className="flex-1"
-                onClick={() => handleSendSelectedFiles("email")}
-                disabled={isSending || selectedFiles.length === 0}
-              >
-                <MailIcon className="mr-2 h-4 w-4" />
-                Enviar por Email
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={() => handleSendSelectedFiles("whatsapp")}
-                disabled={isSending || selectedFiles.length === 0}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Enviar por WhatsApp
-              </Button>
-            </div>
-          </div>
-        )}
-        
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="text-md font-medium mb-2">Automatic Folder Monitoring</h4>
-          <p className="text-sm text-gray-600">
-            To set up automatic folder monitoring on your computer, 
-            you can use the provided Python script. Files placed in the
-            monitored folder will be automatically uploaded to this system.
-          </p>
-        </div>
-      </div>
-    </Card>
+    </div>
   );
 }
