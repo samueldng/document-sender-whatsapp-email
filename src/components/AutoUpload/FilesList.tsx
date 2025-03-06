@@ -1,5 +1,4 @@
-
-import { ExternalLinkIcon, FileIcon, LoaderIcon, Trash2Icon, ChevronDownIcon } from "lucide-react";
+import { ExternalLinkIcon, FileIcon, LoaderIcon, Trash2Icon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -20,6 +19,7 @@ interface FilesListProps {
   selectable?: boolean;
   selectedFiles?: string[];
   onSelectFile?: (path: string, isSelected: boolean) => void;
+  onRefresh?: () => void;
 }
 
 export default function FilesList({ 
@@ -31,11 +31,25 @@ export default function FilesList({
   isLoadingMore = false,
   selectable = false,
   selectedFiles = [],
-  onSelectFile
+  onSelectFile,
+  onRefresh
 }: FilesListProps) {
   return (
     <div className="mt-6">
-      <h4 className="text-md font-medium mb-3">Uploaded Files</h4>
+      <div className="flex justify-between items-center mb-3">
+        <h4 className="text-md font-medium">Uploaded Files</h4>
+        {onRefresh && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={onRefresh}
+            title="Refresh files list"
+          >
+            <RefreshCwIcon className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        )}
+      </div>
       
       {isLoading && files.length === 0 ? (
         <div className="text-center py-4">

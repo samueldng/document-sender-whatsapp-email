@@ -43,10 +43,37 @@ export default function AutoUpload({ selectedClient, documentType }: AutoUploadP
     setShowActions(false);
   }, [selectedClient, documentType]);
 
-  const handleFileSelect = (filePaths: string[]) => {
-    setSelectedFiles(filePaths);
-    setShowActions(filePaths.length > 0);
+  const handleFileSelect = (filePath: string, isSelected: boolean) => {
+    setSelectedFiles(prevSelected => {
+      const newSelected = isSelected
+        ? [...prevSelected, filePath]
+        : prevSelected.filter(path => path !== filePath);
+      
+      setShowActions(newSelected.length > 0);
+      return newSelected;
+    });
   };
+
+  // Display bucket error alert if there's an error
+  if (bucketError) {
+    return (
+      <div className="space-y-4">
+        <Alert variant="destructive">
+          <AlertTitle>Erro de armazenamento</AlertTitle>
+          <AlertDescription>{bucketError}</AlertDescription>
+        </Alert>
+        
+        <Button 
+          className="w-full" 
+          onClick={checkBucket}
+          disabled={isLoading}
+        >
+          <RefreshCwIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
 
   const handleSendEmail = async () => {
     if (selectedFiles.length === 0) return;
@@ -80,27 +107,6 @@ export default function AutoUpload({ selectedClient, documentType }: AutoUploadP
     setShowActions(false);
   };
 
-  // Display bucket error alert if there's an error
-  if (bucketError) {
-    return (
-      <div className="space-y-4">
-        <Alert variant="destructive">
-          <AlertTitle>Erro de armazenamento</AlertTitle>
-          <AlertDescription>{bucketError}</AlertDescription>
-        </Alert>
-        
-        <Button 
-          className="w-full" 
-          onClick={checkBucket}
-          disabled={isLoading}
-        >
-          <RefreshCwIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          Tentar novamente
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <UploadArea 
@@ -115,9 +121,10 @@ export default function AutoUpload({ selectedClient, documentType }: AutoUploadP
         onDelete={handleDeleteFile}
         onRefresh={handleForceRefresh}
         onLoadMore={loadMoreFiles}
-        hasMore={hasMoreFiles}
+        hasMoreFiles={hasMoreFiles}
+        selectable={true}
         selectedFiles={selectedFiles}
-        onSelectionChange={handleFileSelect}
+        onSelectFile={handleFileSelect}
       />
       
       {showActions && (
