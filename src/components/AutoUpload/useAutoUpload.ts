@@ -64,15 +64,18 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   // Reset pagination and cache when client or document type changes
   useEffect(() => {
     resetPagination();
+    setAttemptedBucketCreation(false); // Reset attempt flag when dependencies change
   }, [selectedClient, documentType, resetPagination]);
   
   // Initial load and periodic refresh
   useEffect(() => {
     const loadFiles = async () => {
       try {
+        console.log("Verificando bucket antes de carregar arquivos");
         // Check if bucket exists first
         const bucketExists = await checkBucketExists();
         if (bucketExists) {
+          console.log("Bucket existe, carregando arquivos");
           loadUploadedFiles();
           // If we have a previous bucket error but the bucket now exists, clear the error
           if (bucketError) {
@@ -80,11 +83,15 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
           }
         } else if (!attemptedBucketCreation) {
           // Attempt to create the bucket if it doesn't exist and we haven't tried yet
+          console.log("Bucket não existe, tentando criar");
           setAttemptedBucketCreation(true);
           const success = await checkAndCreateBucket();
           if (success) {
+            console.log("Bucket criado com sucesso, carregando arquivos");
             loadUploadedFiles();
             setBucketError(null);
+          } else {
+            console.error("Falha ao criar bucket");
           }
         }
       } catch (error) {
@@ -106,14 +113,18 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
   // Function to manually check and create bucket
   const checkBucket = useCallback(async () => {
     setAttemptedBucketCreation(true);
+    console.log("Tentativa manual de criar bucket");
     const success = await checkAndCreateBucket();
     if (success) {
+      console.log("Bucket criado manualmente com sucesso");
       loadUploadedFiles(true);
       setBucketError(null);
       toast({
         title: "Sucesso",
         description: "Armazenamento preparado com sucesso",
       });
+    } else {
+      console.error("Falha ao criar bucket manualmente");
     }
     return success;
   }, [checkAndCreateBucket, loadUploadedFiles, toast, setBucketError]);

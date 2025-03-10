@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,13 +35,17 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         const bucketExists = await checkBucketExists();
         
         if (!bucketExists) {
+          console.log("Bucket não existe, tentando criar...");
           const success = await checkAndCreateBucket();
           if (!success) {
+            console.error("Falha ao criar bucket");
             setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
           } else {
+            console.log("Bucket criado com sucesso");
             setBucketError(null);
           }
         } else {
+          console.log("Bucket já existe");
           setBucketError(null);
         }
       } catch (error) {
@@ -95,6 +100,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       const bucketExists = await checkBucketExists();
       
       if (!bucketExists) {
+        console.log("Bucket não existe, tentando criar antes de carregar arquivos...");
         const bucketReady = await checkAndCreateBucket();
         if (!bucketReady) {
           console.error("Bucket not ready, cannot load files");
@@ -102,10 +108,12 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
           setIsLoadingFiles(false);
           return;
         }
+        console.log("Bucket criado com sucesso, continuando carregamento de arquivos");
       }
       
       const offset = currentPage * ITEMS_PER_PAGE;
       
+      console.log(`Buscando documentos: tipo=${documentType}, página=${currentPage}, offset=${offset}`);
       const query = supabase
         .from('documents')
         .select('*')
@@ -114,6 +122,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         .range(offset, offset + ITEMS_PER_PAGE - 1);
       
       if (selectedClient) {
+        console.log(`Filtrando por cliente: ${selectedClient.id}`);
         query.eq('client_id', selectedClient.id);
       }
       
@@ -140,12 +149,13 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
         try {
+          console.log(`Obtendo URL pública para: ${doc.file_path}`);
           const { data: urlData } = await supabase.storage
             .from('documents')
             .getPublicUrl(doc.file_path);
             
-          // The getPublicUrl method doesn't return an error property, so we check for urlData
           if (!urlData || !urlData.publicUrl) {
+            console.error(`Falha ao obter URL pública para: ${doc.file_path}`);
             throw new Error("Failed to get public URL");
           }
           
@@ -166,6 +176,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         }
       }));
       
+      console.log(`Processados ${filesWithUrls.length} arquivos com URLs`);
       setUploadedFiles(prevFiles => 
         currentPage === 0 ? filesWithUrls : [...prevFiles, ...filesWithUrls]
       );
@@ -193,6 +204,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
 
   const handleDeleteFile = useCallback(async (filePath: string) => {
     try {
+      console.log(`Deletando arquivo: ${filePath}`);
       const { error: storageError } = await supabase.storage
         .from('documents')
         .remove([filePath]);
@@ -212,6 +224,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         throw dbError;
       }
       
+      console.log(`Arquivo ${filePath} deletado com sucesso`);
       const updatedFiles = uploadedFiles.filter(file => file.path !== filePath);
       setUploadedFiles(updatedFiles);
       

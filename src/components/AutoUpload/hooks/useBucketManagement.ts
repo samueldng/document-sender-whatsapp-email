@@ -8,7 +8,7 @@ export function useBucketManagement() {
   const [isBucketReady, setIsBucketReady] = useState(false);
   const [isCheckingBucket, setIsCheckingBucket] = useState(false);
   
-  // Verify and create bucket if necessary with retry mechanism
+  // Verify and create bucket if necessary with improved retry mechanism
   const checkAndCreateBucket = useCallback(async (retryCount = 3) => {
     setIsCheckingBucket(true);
     
@@ -23,7 +23,7 @@ export function useBucketManagement() {
         throw new Error(`Falha ao verificar buckets: ${listError.message}`);
       }
       
-      // Check if buckets response is valid and contains the documents bucket
+      // Check if buckets response is valid
       if (!buckets) {
         console.error("Resposta de buckets vazia ou inválida");
         throw new Error("Resposta de buckets inválida");
@@ -39,19 +39,23 @@ export function useBucketManagement() {
       
       console.log("Bucket 'documents' não encontrado, tentando criar via edge function");
       
-      // Create bucket via edge function
+      // Create bucket via edge function with improved error handling
       const response = await supabase.functions.invoke('create-bucket', {
         body: { bucketName: 'documents' }
       });
       
       console.log("Resposta da edge function create-bucket:", response);
       
-      // Check if the response indicates success (either created or already exists)
+      if (!response.data) {
+        throw new Error("Resposta inválida da função create-bucket");
+      }
+      
+      // Check if the response indicates success
       if (response.data?.success) {
         console.log("Bucket criado ou já existente:", response.data);
         
-        // Delay verification to ensure bucket creation has propagated
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Increased delay to ensure bucket creation has propagated
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
         // Double-check that bucket was created successfully
         const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
@@ -68,7 +72,17 @@ export function useBucketManagement() {
         const verifiedBucket = verifyBuckets.find(bucket => bucket.name === 'documents');
         
         if (verifiedBucket) {
-          console.log("Bucket 'documents' foi criado/encontrado com sucesso e está pronto para uso:", verifiedBucket);
+          console.log("Bucket 'documents' foi criado/encontrado com sucesso:", verifiedBucket);
+          
+          // Try to ensure the bucket is public
+          try {
+            await supabase.storage.from('documents').setPublic(true);
+            console.log("Bucket 'documents' definido como público");
+          } catch (publicError) {
+            console.warn("Aviso: Não foi possível definir o bucket como público:", publicError);
+            // Continue anyway as the bucket might still work
+          }
+          
           setIsBucketReady(true);
           return true;
         } else {
@@ -77,15 +91,15 @@ export function useBucketManagement() {
         }
       } else {
         console.error("Erro ao criar bucket:", response.error || "resposta inválida");
-        throw new Error(`Falha ao criar bucket: ${response.error?.message || 'resposta inválida'}`);
+        throw new Error(`Falha ao criar bucket: ${response.error?.message || response.data?.error || 'resposta inválida'}`);
       }
     } catch (error) {
       console.error("Erro ao verificar/criar bucket:", error);
       
-      // Retry logic
+      // Retry logic with increased delay between retries
       if (retryCount > 0) {
         console.log(`Tentando novamente (${retryCount} tentativas restantes)...`);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before retry
         return checkAndCreateBucket(retryCount - 1);
       }
       
@@ -104,6 +118,7 @@ export function useBucketManagement() {
   // Check if the bucket exists without attempting to create it
   const checkBucketExists = useCallback(async () => {
     try {
+      console.log("Verificando se o bucket 'documents' existe");
       const { data: buckets, error } = await supabase.storage.listBuckets();
       
       if (error) {
@@ -112,10 +127,13 @@ export function useBucketManagement() {
       }
       
       if (!buckets) {
+        console.error("Resposta de buckets vazia");
         return false;
       }
       
       const exists = buckets.some(bucket => bucket.name === 'documents');
+      console.log(`Bucket 'documents' ${exists ? 'existe' : 'não existe'}`);
+      
       if (exists) {
         setIsBucketReady(true);
       }
