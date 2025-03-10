@@ -74,14 +74,9 @@ export function useBucketManagement() {
         if (verifiedBucket) {
           console.log("Bucket 'documents' foi criado/encontrado com sucesso:", verifiedBucket);
           
-          // Try to ensure the bucket is public
-          try {
-            await supabase.storage.from('documents').setPublic(true);
-            console.log("Bucket 'documents' definido como público");
-          } catch (publicError) {
-            console.warn("Aviso: Não foi possível definir o bucket como público:", publicError);
-            // Continue anyway as the bucket might still work
-          }
+          // Remove the incorrect setPublic call since this method doesn't exist
+          // Instead, we rely on the edge function to set the bucket as public
+          console.log("Confiando que o bucket 'documents' foi definido como público pela edge function");
           
           setIsBucketReady(true);
           return true;

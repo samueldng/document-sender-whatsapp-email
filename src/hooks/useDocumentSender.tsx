@@ -1,4 +1,3 @@
-
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useDocumentSender } from "@/contexts/DocumentSenderContext";
@@ -38,14 +37,9 @@ export function useSendDocument() {
       if (bucketExists) {
         console.log(`Bucket '${bucketName}' já existe`);
         
-        // Ensure bucket is public
-        try {
-          await supabase.storage.from(bucketName).setPublic(true);
-          console.log(`Bucket '${bucketName}' definido como público`);
-        } catch (publicError) {
-          console.warn(`Aviso: Não foi possível definir o bucket ${bucketName} como público:`, publicError);
-          // Continue anyway as the bucket might still work
-        }
+        // Remove the incorrect setPublic call
+        // We'll rely on the bucket being created as public by the edge function
+        console.log(`Confiando que o bucket '${bucketName}' já está configurado como público`);
         
         return true;
       }
