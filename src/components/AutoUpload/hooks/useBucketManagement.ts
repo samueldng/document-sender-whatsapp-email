@@ -72,15 +72,16 @@ export function useBucketManagement() {
           
           console.log("Test upload result:", testUpload);
           
-          // Try to get public URL for test file
-          const { data: urlData, error: urlError } = await supabase.storage
+          // Try to get public URL for test file - FIX HERE - The getPublicUrl method doesn't return an error property
+          const publicUrlResult = await supabase.storage
             .from('documents')
             .getPublicUrl(testPath);
             
-          if (urlError) {
-            console.error("Erro ao obter URL pública:", urlError);
+          // The result only has a data property, no error property
+          if (!publicUrlResult.data || !publicUrlResult.data.publicUrl) {
+            console.error("Erro ao obter URL pública: URL não disponível");
           } else {
-            console.log("URL pública obtida:", urlData);
+            console.log("URL pública obtida:", publicUrlResult.data.publicUrl);
           }
           
           // Clean up test file
