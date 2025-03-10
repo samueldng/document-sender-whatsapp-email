@@ -32,6 +32,30 @@ async function checkBucketExists(supabaseAdmin, bucketName) {
   console.log(`Checking if bucket '${bucketName}' exists`);
   
   try {
+    // First try direct createBucket with catch for 'already exists' error
+    // This is more reliable than listBuckets which sometimes returns empty arrays
+    try {
+      const { error } = await supabaseAdmin.storage.createBucket(bucketName, {
+        public: true,
+        fileSizeLimit: null,
+        downloadExpiration: 0
+      });
+      
+      if (error) {
+        if (error.message.includes("already exists")) {
+          console.log(`Bucket '${bucketName}' already exists based on creation attempt`);
+          return { exists: true };
+        }
+        console.error("Error in bucket creation check:", error);
+      } else {
+        console.log(`Bucket '${bucketName}' was just created`);
+        return { exists: true, wasJustCreated: true };
+      }
+    } catch (creationError) {
+      console.error("Error in creation check:", creationError);
+    }
+    
+    // Fallback to listBuckets method
     const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
     
     if (listError) {
@@ -69,20 +93,14 @@ async function createNewBucket(supabaseAdmin, bucketName) {
       if (error.message.includes("already exists")) {
         console.log(`Bucket '${bucketName}' already exists (from error message)`);
         
-        // Attempt to update the bucket to be public if it already exists
+        // Attempt to update bucket policies to ensure public access
         try {
-          console.log(`Updating bucket '${bucketName}' to be public`);
+          // Create policies for public access
+          await createPublicPoliciesForBucket(supabaseAdmin, bucketName);
           
-          // Create a simple policy that allows public read access
-          const { error: policyError } = await supabaseAdmin.storage.from(bucketName).createSignedUrl('dummy.txt', 31536000);
-          
-          if (policyError && !policyError.message.includes('not found')) {
-            console.warn("Warning: Could not ensure public access for existing bucket:", policyError);
-          }
-          
-          return { success: true, message: `Bucket '${bucketName}' already exists and is ready to use` };
-        } catch (updateError) {
-          console.warn("Warning: Could not ensure public access for existing bucket:", updateError);
+          return { success: true, message: `Bucket '${bucketName}' already exists and public policies have been set` };
+        } catch (policyError) {
+          console.warn("Warning: Could not ensure public access for existing bucket:", policyError);
           return { success: true, message: `Bucket '${bucketName}' already exists but could not ensure public access` };
         }
       }
@@ -91,31 +109,50 @@ async function createNewBucket(supabaseAdmin, bucketName) {
       throw new Error(`Failed to create bucket: ${error.message}`);
     }
 
-    // Additionally, attempt to make the bucket public by creating a policy
-    try {
-      console.log(`Setting bucket '${bucketName}' as public`);
-      
-      // Create policies for public access
-      const policyName = `allow-public-read-${bucketName}`;
-      await supabaseAdmin.rpc('create_storage_policy', {
-        name: policyName,
-        bucket: bucketName,
-        definition: {
-          name: policyName,
-          action: 'SELECT',
-          role: 'anon',
-          bucket: bucketName,
-          condition: 'TRUE'
-        }
-      }).catch(e => console.warn("Policy creation may have failed:", e));
-
-    } catch (policyError) {
-      console.warn("Warning: Could not create public access policy:", policyError);
-    }
+    // Create policies for public access
+    await createPublicPoliciesForBucket(supabaseAdmin, bucketName);
 
     return { success: true, message: "Bucket created successfully" };
   } catch (error) {
     console.error("Error in createNewBucket:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to create public policies for a bucket
+async function createPublicPoliciesForBucket(supabaseAdmin, bucketName) {
+  console.log(`Setting bucket '${bucketName}' as public through policies`);
+  
+  try {
+    // Create a policy for public read access
+    const policyName = `allow-public-read-${bucketName}`;
+    
+    // Using RPC to create a policy
+    await supabaseAdmin.rpc('create_storage_policy', {
+      name: policyName,
+      bucket: bucketName,
+      definition: {
+        name: policyName,
+        action: 'SELECT',
+        role: 'anon',
+        bucket: bucketName,
+        condition: 'TRUE'
+      }
+    }).catch(e => {
+      // Policy might already exist, which is fine
+      console.log("Policy creation note:", e.message);
+    });
+    
+    // Also try direct API approach as fallback
+    try {
+      await supabaseAdmin.storage.from(bucketName).getPublicUrl('dummy-test-path');
+    } catch (dummyError) {
+      console.log("Public URL test resulted in:", dummyError.message);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Error creating public policies:", error);
     return { success: false, error: error.message };
   }
 }
@@ -125,15 +162,42 @@ async function verifyBucketAccess(supabaseAdmin, bucketName) {
   console.log(`Verifying access to bucket: ${bucketName}`);
   
   try {
-    // Try to list files in the bucket (this will verify we have access)
-    const { data, error } = await supabaseAdmin.storage.from(bucketName).list();
+    // Try to upload a small test file to verify we have full access
+    const testContent = new Blob(['test'], { type: 'text/plain' });
+    const testPath = `test-${Date.now()}.txt`;
     
-    if (error) {
-      console.error("Error accessing bucket:", error);
-      return { accessible: false, error: error.message };
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      .from(bucketName)
+      .upload(testPath, testContent, { upsert: true });
+    
+    if (uploadError) {
+      console.error("Error in test upload:", uploadError);
+      return { accessible: false, error: uploadError.message };
     }
     
-    return { accessible: true, fileCount: data?.length || 0 };
+    console.log("Test upload successful:", uploadData);
+    
+    // Try to get a public URL for the test file
+    const { data: urlData, error: urlError } = await supabaseAdmin.storage
+      .from(bucketName)
+      .getPublicUrl(testPath);
+    
+    if (urlError) {
+      console.error("Error getting public URL:", urlError);
+      // Still accessible for upload, but URL generation failed
+      return { accessible: true, publicUrlWorking: false, error: urlError.message };
+    }
+    
+    console.log("Public URL obtained:", urlData);
+    
+    // Clean up test file
+    await supabaseAdmin.storage.from(bucketName).remove([testPath]);
+    
+    return { 
+      accessible: true, 
+      publicUrlWorking: !!urlData?.publicUrl,
+      publicUrl: urlData?.publicUrl
+    };
   } catch (error) {
     console.error("Error verifying bucket access:", error);
     return { accessible: false, error: error.message };
@@ -181,7 +245,7 @@ async function handleCreateBucket(req) {
 
     try {
       // Check if bucket exists
-      const { exists, bucket, error } = await checkBucketExists(supabaseAdmin, bucketName);
+      const { exists, bucket, wasJustCreated, error } = await checkBucketExists(supabaseAdmin, bucketName);
       
       // If we're just checking, return the result
       if (checkOnly === true) {
@@ -196,35 +260,50 @@ async function handleCreateBucket(req) {
       if (exists) {
         console.log(`Bucket '${bucketName}' already exists`);
         
-        // Try to ensure the bucket is public
-        try {
-          console.log(`Ensuring bucket '${bucketName}' is public`);
-          
-          // Create a simple policy if not already exists
-          await supabaseAdmin.rpc('create_storage_policy', {
-            name: `allow-public-read-${bucketName}`,
-            bucket: bucketName,
-            definition: {
-              name: `allow-public-read-${bucketName}`,
-              action: 'SELECT',
-              role: 'anon',
-              bucket: bucketName,
-              condition: 'TRUE'
-            }
-          }).catch(e => console.warn("Policy may already exist:", e));
-        } catch (publicError) {
-          console.warn("Warning: Could not ensure public access:", publicError);
-        }
+        // Create policies to ensure the bucket is public
+        await createPublicPoliciesForBucket(supabaseAdmin, bucketName);
         
-        // Verify we can access the bucket
-        const { accessible } = await verifyBucketAccess(supabaseAdmin, bucketName);
+        // Verify we can access the bucket and get public URLs
+        const accessCheck = await verifyBucketAccess(supabaseAdmin, bucketName);
+        
+        // If we can't access the bucket or get public URLs, try to fix it
+        if (!accessCheck.accessible || !accessCheck.publicUrlWorking) {
+          console.log("Bucket exists but has issues - attempting to fix");
+          
+          try {
+            // Try to update bucket to be public directly 
+            const { error: updateError } = await supabaseAdmin.storage.updateBucket(bucketName, {
+              public: true
+            });
+            
+            if (updateError) {
+              console.error("Error updating bucket:", updateError);
+            } else {
+              console.log("Bucket updated to public successfully");
+            }
+          } catch (updateError) {
+            console.error("Error trying to update bucket:", updateError);
+          }
+          
+          // Try again to verify access after fix attempts
+          const retryAccessCheck = await verifyBucketAccess(supabaseAdmin, bucketName);
+          
+          return createSuccessResponse({
+            success: true,
+            message: `Bucket '${bucketName}' exists, attempted to fix access issues`,
+            bucket: bucketName,
+            accessible: retryAccessCheck.accessible,
+            publicUrlWorking: retryAccessCheck.publicUrlWorking
+          });
+        }
         
         return createSuccessResponse({
           success: true,
           message: `Bucket '${bucketName}' already exists and is ready to use`,
           bucket: bucketName,
           details: bucket,
-          accessible
+          accessible: accessCheck.accessible,
+          publicUrlWorking: accessCheck.publicUrlWorking
         });
       }
 
@@ -238,7 +317,7 @@ async function handleCreateBucket(req) {
         });
       }
 
-      // Create the bucket
+      // Create the bucket with public access
       const createResult = await createNewBucket(supabaseAdmin, bucketName);
       
       if (!createResult.success) {
@@ -249,8 +328,8 @@ async function handleCreateBucket(req) {
       // Wait a bit to ensure bucket is created
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Verify we can access the bucket
-      const { accessible, fileCount, error: accessError } = await verifyBucketAccess(supabaseAdmin, bucketName);
+      // Verify we can access the bucket and get public URLs
+      const accessCheck = await verifyBucketAccess(supabaseAdmin, bucketName);
       
       // Final check of bucket existence
       const finalCheck = await checkBucketExists(supabaseAdmin, bucketName);
@@ -260,9 +339,8 @@ async function handleCreateBucket(req) {
         message: `Bucket '${bucketName}' created successfully`,
         bucket: bucketName,
         details: finalCheck.bucket,
-        accessible,
-        fileCount,
-        accessError: accessError || null
+        accessible: accessCheck.accessible,
+        publicUrlWorking: accessCheck.publicUrlWorking
       });
     } catch (error) {
       console.error("Error in bucket operations:", error);
