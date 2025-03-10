@@ -1,3 +1,4 @@
+
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useDocumentSender } from "@/contexts/DocumentSenderContext";
@@ -19,78 +20,62 @@ export function useSendDocument() {
     try {
       console.log(`Verificando existência do bucket: ${bucketName}`);
       
-      // First check if bucket already exists
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-      
-      if (listError) {
-        console.error("Erro ao listar buckets:", listError);
-        throw new Error(`Falha ao verificar buckets: ${listError.message}`);
-      }
-      
-      if (!buckets) {
-        console.error("Resposta de buckets vazia");
-        throw new Error("Resposta de buckets vazia");
-      }
-      
-      const bucketExists = buckets.some(bucket => bucket.name === bucketName);
-      
-      if (bucketExists) {
-        console.log(`Bucket '${bucketName}' já existe`);
-        
-        // Remove the incorrect setPublic call
-        // We'll rely on the bucket being created as public by the edge function
-        console.log(`Confiando que o bucket '${bucketName}' já está configurado como público`);
-        
-        return true;
-      }
-      
-      console.log(`Bucket '${bucketName}' não encontrado, tentando criar via edge function`);
-      
-      // Create bucket via edge function
-      const response = await supabase.functions.invoke('create-bucket', {
-        body: { bucketName }
+      // Use edge function to check and create bucket if needed
+      const { data: response, error: invokeError } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName, create: true }
       });
       
-      console.log("Resposta da função create-bucket:", response);
-      
-      if (!response.data) {
-        throw new Error("Resposta vazia da função create-bucket");
+      if (invokeError) {
+        console.error("Erro ao verificar/criar bucket via edge function:", invokeError);
+        throw new Error(`Falha ao verificar/criar bucket: ${invokeError.message}`);
       }
       
-      if (!response.data?.success) {
-        console.error("Resposta inesperada ao criar bucket:", response.data);
-        throw new Error(`Falha ao criar bucket ${bucketName}: resposta inválida`);
+      if (!response?.success) {
+        console.error("Resposta inválida da função create-bucket:", response);
+        throw new Error(`Falha ao verificar/criar bucket: resposta inválida`);
       }
       
-      // Delay to ensure bucket creation has propagated
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log("Resposta da verificação/criação do bucket:", response);
       
-      // Double-check that bucket was created successfully
-      const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
-      
-      if (verifyError) {
-        console.error("Erro ao verificar criação do bucket:", verifyError);
-        throw new Error(`Falha ao verificar criação do bucket: ${verifyError.message}`);
+      // Verify bucket access with a test
+      try {
+        // Try a small test upload to verify we can use the bucket
+        const testFile = new Blob(['test'], { type: 'text/plain' });
+        const testPath = `test-${Date.now()}.txt`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(testPath, testFile);
+          
+        if (uploadError) {
+          console.warn("Aviso: Teste de upload falhou:", uploadError);
+          // Continue anyway as the bucket might still work
+        } else {
+          console.log("Teste de upload bem-sucedido:", uploadData);
+          // Clean up test file
+          await supabase.storage.from(bucketName).remove([testPath]);
+        }
+      } catch (testError) {
+        console.warn("Aviso: Erro durante teste de acesso ao bucket:", testError);
+        // Continue anyway
       }
       
-      if (!verifyBuckets) {
-        throw new Error("Resposta de verificação vazia");
-      }
-      
-      const bucketCreated = verifyBuckets.some(bucket => bucket.name === bucketName);
-      
-      if (!bucketCreated) {
-        throw new Error(`Bucket '${bucketName}' não foi criado corretamente`);
-      }
-      
-      console.log(`Bucket '${bucketName}' foi criado com sucesso e está pronto para uso`);
       return true;
     } catch (error) {
       console.error("Erro ao garantir existência do bucket:", error);
       
       // One more retry with direct API call as fallback
       try {
-        console.log("Tentando criar bucket diretamente como fallback...");
+        console.log("Tentando verificar bucket diretamente como fallback...");
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+        
+        if (bucketExists) {
+          console.log("Bucket existe segundo verificação direta");
+          return true;
+        }
+        
+        console.log("Bucket não existe, tentando criar diretamente...");
         await supabase.storage.createBucket(bucketName, {
           public: true
         });

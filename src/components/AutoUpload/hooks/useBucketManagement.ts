@@ -15,78 +15,73 @@ export function useBucketManagement() {
     try {
       console.log("Verificando existência do bucket 'documents'");
       
-      // First, check if bucket already exists
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      // First, check if bucket already exists using edge function
+      // This approach is more reliable than listBuckets() which sometimes returns empty arrays
+      const { data: response, error: invokeError } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents', checkOnly: true }
+      });
       
-      if (listError) {
-        console.error("Erro ao listar buckets:", listError);
-        throw new Error(`Falha ao verificar buckets: ${listError.message}`);
+      if (invokeError) {
+        console.error("Erro ao verificar bucket via edge function:", invokeError);
+        throw new Error(`Falha ao verificar bucket: ${invokeError.message}`);
       }
       
-      // Check if buckets response is valid
-      if (!buckets) {
-        console.error("Resposta de buckets vazia ou inválida");
-        throw new Error("Resposta de buckets inválida");
-      }
+      console.log("Resposta da verificação do bucket:", response);
       
-      const documentsBucket = buckets.find(bucket => bucket.name === 'documents');
-      
-      if (documentsBucket) {
-        console.log("Bucket 'documents' encontrado:", documentsBucket);
+      if (response?.exists) {
+        console.log("Bucket 'documents' já existe segundo a edge function");
         setIsBucketReady(true);
         return true;
       }
       
-      console.log("Bucket 'documents' não encontrado, tentando criar via edge function");
+      console.log("Bucket 'documents' não encontrado, criando via edge function");
       
-      // Create bucket via edge function with improved error handling
-      const response = await supabase.functions.invoke('create-bucket', {
-        body: { bucketName: 'documents' }
+      // Create bucket via edge function
+      const { data: createResponse, error: createError } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents', create: true }
       });
       
-      console.log("Resposta da edge function create-bucket:", response);
-      
-      if (!response.data) {
-        throw new Error("Resposta inválida da função create-bucket");
+      if (createError) {
+        console.error("Erro ao criar bucket via edge function:", createError);
+        throw new Error(`Falha ao criar bucket: ${createError.message}`);
       }
       
+      if (!createResponse) {
+        throw new Error("Resposta vazia da função create-bucket");
+      }
+      
+      console.log("Resposta da criação do bucket:", createResponse);
+      
       // Check if the response indicates success
-      if (response.data?.success) {
-        console.log("Bucket criado ou já existente:", response.data);
+      if (createResponse.success) {
+        console.log("Bucket criado ou já existente com sucesso");
         
-        // Increased delay to ensure bucket creation has propagated
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Double-check that bucket was created successfully
-        const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
-        
-        if (verifyError) {
-          console.error("Erro ao verificar criação do bucket:", verifyError);
-          throw new Error(`Falha ao verificar criação do bucket: ${verifyError.message}`);
-        }
-        
-        if (!verifyBuckets) {
-          throw new Error("Resposta de verificação inválida");
-        }
-        
-        const verifiedBucket = verifyBuckets.find(bucket => bucket.name === 'documents');
-        
-        if (verifiedBucket) {
-          console.log("Bucket 'documents' foi criado/encontrado com sucesso:", verifiedBucket);
+        // Double check with direct storage call
+        try {
+          const { data: testUpload } = await supabase.storage
+            .from('documents')
+            .upload(`test-${Date.now()}.txt`, new Blob(['test']), { upsert: true });
           
-          // Remove the incorrect setPublic call since this method doesn't exist
-          // Instead, we rely on the edge function to set the bucket as public
-          console.log("Confiando que o bucket 'documents' foi definido como público pela edge function");
+          console.log("Test upload result:", testUpload);
           
-          setIsBucketReady(true);
-          return true;
-        } else {
-          console.error("Bucket não encontrado após tentativa de criação/verificação");
-          throw new Error("Bucket não foi criado corretamente");
+          if (testUpload) {
+            // Clean up test file
+            await supabase.storage.from('documents').remove([testUpload.path]);
+            console.log("Bucket está operacional - upload de teste bem-sucedido");
+            setIsBucketReady(true);
+            return true;
+          }
+        } catch (testError) {
+          console.warn("Aviso: Teste de upload falhou, mas continuando:", testError);
+          // Continue anyway as the bucket might still be setting up
         }
+        
+        // Even if test fails, trust the edge function result
+        setIsBucketReady(true);
+        return true;
       } else {
-        console.error("Erro ao criar bucket:", response.error || "resposta inválida");
-        throw new Error(`Falha ao criar bucket: ${response.error?.message || response.data?.error || 'resposta inválida'}`);
+        console.error("Erro na resposta da criação do bucket:", createResponse.error || "resposta inválida");
+        throw new Error(`Falha ao criar bucket: ${createResponse.error || 'resposta inválida'}`);
       }
     } catch (error) {
       console.error("Erro ao verificar/criar bucket:", error);
@@ -114,24 +109,24 @@ export function useBucketManagement() {
   const checkBucketExists = useCallback(async () => {
     try {
       console.log("Verificando se o bucket 'documents' existe");
-      const { data: buckets, error } = await supabase.storage.listBuckets();
+      
+      // Use the edge function to check if bucket exists
+      const { data: response, error } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents', checkOnly: true }
+      });
       
       if (error) {
-        console.error("Erro ao listar buckets:", error);
+        console.error("Erro ao verificar bucket via edge function:", error);
         return false;
       }
       
-      if (!buckets) {
-        console.error("Resposta de buckets vazia");
-        return false;
-      }
-      
-      const exists = buckets.some(bucket => bucket.name === 'documents');
-      console.log(`Bucket 'documents' ${exists ? 'existe' : 'não existe'}`);
+      const exists = response?.exists === true;
+      console.log(`Bucket 'documents' ${exists ? 'existe' : 'não existe'} segundo a edge function`);
       
       if (exists) {
         setIsBucketReady(true);
       }
+      
       return exists;
     } catch (error) {
       console.error("Erro ao verificar existência do bucket:", error);

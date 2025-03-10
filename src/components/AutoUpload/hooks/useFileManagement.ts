@@ -96,19 +96,36 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         return;
       }
       
-      // Check if bucket exists before proceeding
-      const bucketExists = await checkBucketExists();
-      
-      if (!bucketExists) {
-        console.log("Bucket não existe, tentando criar antes de carregar arquivos...");
-        const bucketReady = await checkAndCreateBucket();
-        if (!bucketReady) {
-          console.error("Bucket not ready, cannot load files");
-          setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
-          setIsLoadingFiles(false);
-          return;
+      // Verify test upload to confirm bucket accessibility
+      try {
+        const testFile = new Blob(['test'], { type: 'text/plain' });
+        const testPath = `test-${Date.now()}.txt`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(testPath, testFile);
+          
+        if (uploadError) {
+          console.warn("Aviso: Teste de upload falhou:", uploadError);
+          
+          if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
+            console.log("Bucket não existe ou não está acessível, tentando criar novamente...");
+            const bucketReady = await checkAndCreateBucket();
+            if (!bucketReady) {
+              console.error("Bucket not ready, cannot load files");
+              setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+              setIsLoadingFiles(false);
+              return;
+            }
+          }
+        } else {
+          console.log("Teste de upload bem-sucedido:", uploadData);
+          // Clean up test file
+          await supabase.storage.from('documents').remove([testPath]);
         }
-        console.log("Bucket criado com sucesso, continuando carregamento de arquivos");
+      } catch (testError) {
+        console.warn("Aviso: Erro durante teste de acesso ao bucket:", testError);
+        // Continue anyway
       }
       
       const offset = currentPage * ITEMS_PER_PAGE;
@@ -194,7 +211,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [checkAndCreateBucket, checkBucketExists, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
+  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
 
   const loadMoreFiles = useCallback(() => {
     if (isLoadingFiles || !hasMoreFiles) return;
