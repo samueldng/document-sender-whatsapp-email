@@ -15,118 +15,116 @@ export function useBucketManagement() {
     try {
       console.log("Verificando existência do bucket 'documents'");
       
-      // First, check if bucket already exists using edge function
-      // This approach is more reliable than listBuckets() which sometimes returns empty arrays
+      // First, try direct bucket creation as it's the most reliable approach
+      // This will either create the bucket or return "already exists" error
+      try {
+        console.log("Tentando criar bucket diretamente");
+        const { error: createError } = await supabase.storage.createBucket('documents', {
+          public: true
+        });
+        
+        if (createError) {
+          if (createError.message.includes('already exists')) {
+            console.log("Bucket já existe (confirmado via tentativa de criação)");
+            // Success case - bucket already exists
+          } else {
+            console.error("Erro ao criar bucket diretamente:", createError);
+            // Continue to next approach
+          }
+        } else {
+          console.log("Bucket criado com sucesso via método direto");
+        }
+      } catch (directError) {
+        console.error("Erro na tentativa direta:", directError);
+        // Continue to next approach
+      }
+      
+      // Check if bucket exists using edge function (backup approach)
       const { data: response, error: invokeError } = await supabase.functions.invoke('create-bucket', {
-        body: { bucketName: 'documents', checkOnly: true }
+        body: { bucketName: 'documents', create: true }
       });
       
       if (invokeError) {
         console.error("Erro ao verificar bucket via edge function:", invokeError);
-        throw new Error(`Falha ao verificar bucket: ${invokeError.message}`);
+        // Continue to next approach
+      } else {
+        console.log("Resposta da edge function:", response);
       }
       
-      console.log("Resposta da verificação do bucket:", response);
-      
-      if (response?.exists) {
-        console.log("Bucket 'documents' já existe segundo a edge function");
-        setIsBucketReady(true);
-        return true;
-      }
-      
-      console.log("Bucket 'documents' não encontrado, criando via edge function");
-      
-      // Create bucket via edge function
-      const { data: createResponse, error: createError } = await supabase.functions.invoke('create-bucket', {
-        body: { bucketName: 'documents', create: true }
-      });
-      
-      if (createError) {
-        console.error("Erro ao criar bucket via edge function:", createError);
-        throw new Error(`Falha ao criar bucket: ${createError.message}`);
-      }
-      
-      if (!createResponse) {
-        throw new Error("Resposta vazia da função create-bucket");
-      }
-      
-      console.log("Resposta da criação do bucket:", createResponse);
-      
-      // Check if the response indicates success
-      if (createResponse.success) {
-        console.log("Bucket criado ou já existente com sucesso");
+      // Verify bucket actually works by doing a test upload
+      try {
+        console.log("Verificando acesso ao bucket com upload de teste");
+        const testFile = new Blob(['test'], { type: 'text/plain' });
+        const testPath = `test-${Date.now()}.txt`;
         
-        // Double check with direct storage call
-        try {
-          const testFile = new Blob(['test'], { type: 'text/plain' });
-          const testPath = `test-${Date.now()}.txt`;
+        const { data: testUpload, error: testError } = await supabase.storage
+          .from('documents')
+          .upload(testPath, testFile, { upsert: true });
           
-          const { data: testUpload, error: testError } = await supabase.storage
-            .from('documents')
-            .upload(testPath, testFile, { upsert: true });
-            
-          if (testError) {
-            console.error("Erro no upload de teste:", testError);
-            throw new Error(`Falha no teste de upload: ${testError.message}`);
-          }
+        if (testError) {
+          console.error("Erro no upload de teste:", testError);
+          throw new Error(`Falha no teste de upload: ${testError.message}`);
+        }
+        
+        console.log("Test upload result:", testUpload);
+        
+        // Try to get public URL for test file
+        const publicUrlResult = await supabase.storage
+          .from('documents')
+          .getPublicUrl(testPath);
           
-          console.log("Test upload result:", testUpload);
+        if (!publicUrlResult.data || !publicUrlResult.data.publicUrl) {
+          console.error("Erro ao obter URL pública: URL não disponível");
+        } else {
+          console.log("URL pública obtida:", publicUrlResult.data.publicUrl);
           
-          // Try to get public URL for test file - FIX HERE - The getPublicUrl method doesn't return an error property
-          const publicUrlResult = await supabase.storage
-            .from('documents')
-            .getPublicUrl(testPath);
-            
-          // The result only has a data property, no error property
-          if (!publicUrlResult.data || !publicUrlResult.data.publicUrl) {
-            console.error("Erro ao obter URL pública: URL não disponível");
-          } else {
-            console.log("URL pública obtida:", publicUrlResult.data.publicUrl);
-          }
-          
-          // Clean up test file
-          await supabase.storage.from('documents').remove([testPath]);
-          console.log("Bucket está operacional - upload de teste bem-sucedido");
-          setIsBucketReady(true);
-          return true;
-        } catch (testError) {
-          console.warn("Aviso: Teste de upload falhou, mas continuando:", testError);
-          
-          // As a fallback, try creating the bucket directly
+          // Verify URL is accessible by making a HEAD request
           try {
-            console.log("Tentando criar bucket diretamente como fallback");
-            await supabase.storage.createBucket('documents', {
-              public: true
+            const urlCheckResponse = await fetch(publicUrlResult.data.publicUrl, { 
+              method: 'HEAD',
+              cache: 'no-store'
             });
-            console.log("Bucket criado diretamente com sucesso");
-            
-            // Test again
-            const retryFile = new Blob(['retry-test'], { type: 'text/plain' });
-            const retryPath = `retry-test-${Date.now()}.txt`;
-            
-            const { data: retryUpload, error: retryError } = await supabase.storage
-              .from('documents')
-              .upload(retryPath, retryFile, { upsert: true });
-              
-            if (retryError) {
-              console.error("Erro no retry upload:", retryError);
+            if (urlCheckResponse.ok) {
+              console.log("URL é acessível:", urlCheckResponse.status);
             } else {
-              console.log("Retry upload bem-sucedido:", retryUpload);
-              await supabase.storage.from('documents').remove([retryPath]);
-              setIsBucketReady(true);
-              return true;
+              console.error("URL não é acessível:", urlCheckResponse.status);
             }
-          } catch (directError) {
-            console.error("Erro no fallback de criação direta:", directError);
+          } catch (urlCheckError) {
+            console.error("Erro ao verificar URL:", urlCheckError);
           }
         }
         
-        // Even if test fails, trust the edge function result
+        // Clean up test file
+        await supabase.storage.from('documents').remove([testPath]);
+        console.log("Bucket está operacional - upload de teste bem-sucedido");
         setIsBucketReady(true);
         return true;
-      } else {
-        console.error("Erro na resposta da criação do bucket:", createResponse.error || "resposta inválida");
-        throw new Error(`Falha ao criar bucket: ${createResponse.error || 'resposta inválida'}`);
+      } catch (testError) {
+        console.warn("Aviso: Teste de upload falhou, tentando abordagem alternativa", testError);
+        
+        // Try a different test file name as a last resort
+        try {
+          console.log("Tentando com um nome de arquivo diferente");
+          const altTestFile = new Blob(['test-alt'], { type: 'text/plain' });
+          const altTestPath = `alt-test-${Date.now()}.txt`;
+          
+          const { data: altUpload, error: altError } = await supabase.storage
+            .from('documents')
+            .upload(altTestPath, altTestFile, { upsert: true });
+            
+          if (altError) {
+            console.error("Erro no upload alternativo:", altError);
+            throw new Error(`Falha no teste alternativo: ${altError.message}`);
+          }
+          
+          console.log("Upload alternativo bem-sucedido:", altUpload);
+          await supabase.storage.from('documents').remove([altTestPath]);
+          setIsBucketReady(true);
+          return true;
+        } catch (altError) {
+          console.error("Erro no teste alternativo:", altError);
+          throw new Error(`Falha nos testes de bucket: ${altError.message}`);
+        }
       }
     } catch (error) {
       console.error("Erro ao verificar/criar bucket:", error);
@@ -155,7 +153,41 @@ export function useBucketManagement() {
     try {
       console.log("Verificando se o bucket 'documents' existe");
       
-      // Use the edge function to check if bucket exists
+      // Try to get bucket info directly
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      
+      if (listError) {
+        console.error("Erro ao listar buckets:", listError);
+      } else {
+        const exists = buckets?.some(bucket => bucket.name === 'documents');
+        console.log(`Bucket 'documents' ${exists ? 'existe' : 'não existe'} segundo listBuckets`);
+        
+        if (exists) {
+          // Double check with a test upload
+          try {
+            const testFile = new Blob(['check'], { type: 'text/plain' });
+            const testPath = `check-${Date.now()}.txt`;
+            
+            const { error: testError } = await supabase.storage
+              .from('documents')
+              .upload(testPath, testFile, { upsert: true });
+              
+            if (testError) {
+              console.error("Bucket existe mas não permite upload:", testError);
+              return false;
+            }
+            
+            await supabase.storage.from('documents').remove([testPath]);
+            setIsBucketReady(true);
+            return true;
+          } catch (testError) {
+            console.error("Erro no teste de acesso:", testError);
+            return false;
+          }
+        }
+      }
+      
+      // Use the edge function as backup to check if bucket exists
       const { data: response, error } = await supabase.functions.invoke('create-bucket', {
         body: { bucketName: 'documents', checkOnly: true }
       });

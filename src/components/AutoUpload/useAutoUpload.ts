@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { Client, DocumentType } from "@/types/client";
 import { useFileManagement } from "./hooks/useFileManagement";
 import { useFileUpload } from "./hooks/useFileUpload";
@@ -67,12 +68,37 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     setAttemptedBucketCreation(false); // Reset attempt flag when dependencies change
   }, [selectedClient, documentType, resetPagination]);
   
-  // Initial load and periodic refresh
+  // Initial load and periodic refresh with improved bucket initialization
   useEffect(() => {
     const loadFiles = async () => {
       try {
         console.log("Verificando bucket antes de carregar arquivos");
-        // Check if bucket exists first
+        
+        // First try creating bucket directly - more reliable
+        try {
+          console.log("Tentando criar bucket documents diretamente");
+          const { error: createError } = await supabase.storage.createBucket('documents', {
+            public: true
+          });
+          
+          if (createError) {
+            if (createError.message.includes('already exists')) {
+              console.log("Bucket já existe (confirmado via tentativa de criação)");
+              setBucketError(null);
+            } else {
+              console.error("Erro ao criar bucket diretamente:", createError);
+              // Continue to next approach
+            }
+          } else {
+            console.log("Bucket criado com sucesso via método direto");
+            setBucketError(null);
+          }
+        } catch (directError) {
+          console.error("Erro na tentativa direta:", directError);
+          // Continue to next approach
+        }
+        
+        // Check if bucket exists
         const bucketExists = await checkBucketExists();
         if (bucketExists) {
           console.log("Bucket existe, carregando arquivos");
@@ -85,7 +111,7 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
           // Attempt to create the bucket if it doesn't exist and we haven't tried yet
           console.log("Bucket não existe, tentando criar");
           setAttemptedBucketCreation(true);
-          const success = await checkAndCreateBucket();
+          const success = await checkAndCreateBucket(3); // 3 retries
           if (success) {
             console.log("Bucket criado com sucesso, carregando arquivos");
             loadUploadedFiles();
@@ -110,11 +136,36 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
     return () => clearInterval(intervalId);
   }, [loadUploadedFiles, refreshTrigger, checkBucketExists, checkAndCreateBucket, bucketError, setBucketError, attemptedBucketCreation]);
 
-  // Function to manually check and create bucket
+  // Function to manually check and create bucket with more robust approach
   const checkBucket = useCallback(async () => {
     setAttemptedBucketCreation(true);
     console.log("Tentativa manual de criar bucket");
-    const success = await checkAndCreateBucket();
+    
+    // First try direct create
+    try {
+      console.log("Tentando criar bucket documents diretamente");
+      const { error: createError } = await supabase.storage.createBucket('documents', {
+        public: true
+      });
+      
+      if (createError) {
+        if (createError.message.includes('already exists')) {
+          console.log("Bucket já existe (confirmado via tentativa de criação)");
+          // Success case
+        } else {
+          console.error("Erro ao criar bucket diretamente:", createError);
+          // Continue to next approach
+        }
+      } else {
+        console.log("Bucket criado com sucesso via método direto");
+      }
+    } catch (directError) {
+      console.error("Erro na tentativa direta:", directError);
+      // Continue to next approach
+    }
+    
+    // Then use our utility function for additional checks and retries
+    const success = await checkAndCreateBucket(3); // 3 retries
     if (success) {
       console.log("Bucket criado manualmente com sucesso");
       loadUploadedFiles(true);
@@ -125,6 +176,11 @@ export function useAutoUpload({ selectedClient, documentType }: UseAutoUploadPro
       });
     } else {
       console.error("Falha ao criar bucket manualmente");
+      toast({
+        title: "Erro",
+        description: "Não foi possível preparar o armazenamento",
+        variant: "destructive",
+      });
     }
     return success;
   }, [checkAndCreateBucket, loadUploadedFiles, toast, setBucketError]);

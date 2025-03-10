@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,10 +31,35 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
   useEffect(() => {
     const initializeBucket = async () => {
       try {
+        // Try creating the bucket directly first - most reliable
+        try {
+          console.log("Tentando criar bucket documents diretamente");
+          const { error: createError } = await supabase.storage.createBucket('documents', {
+            public: true
+          });
+          
+          if (createError) {
+            if (createError.message.includes('already exists')) {
+              console.log("Bucket já existe (confirmado via tentativa de criação)");
+              setBucketError(null);
+            } else {
+              console.error("Erro ao criar bucket diretamente:", createError);
+              // Continue to next approach
+            }
+          } else {
+            console.log("Bucket criado com sucesso via método direto");
+            setBucketError(null);
+          }
+        } catch (directError) {
+          console.error("Erro na tentativa direta:", directError);
+          // Continue to next approach
+        }
+        
+        // Check if bucket exists using our utility
         const bucketExists = await checkBucketExists();
         
         if (!bucketExists) {
-          console.log("Bucket não existe, tentando criar...");
+          console.log("Bucket não existe ou não está acessível, tentando criar...");
           const success = await checkAndCreateBucket();
           if (!success) {
             console.error("Falha ao criar bucket");
@@ -71,6 +95,58 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     }
   }, [getCacheKey]);
 
+  // Helper function to get a valid public URL
+  const getValidPublicUrl = useCallback(async (filePath: string) => {
+    try {
+      // First method - standard getPublicUrl
+      const { data: urlData } = await supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath);
+        
+      if (urlData && urlData.publicUrl) {
+        // Verify URL is accessible
+        try {
+          const checkResponse = await fetch(urlData.publicUrl, { 
+            method: 'HEAD',
+            cache: 'no-store' 
+          });
+          
+          if (checkResponse.ok) {
+            return urlData.publicUrl;
+          } else {
+            console.warn(`URL not accessible: ${checkResponse.status} - ${urlData.publicUrl}`);
+          }
+        } catch (checkError) {
+          console.warn("Error checking URL accessibility:", checkError);
+        }
+      }
+      
+      // Second method - try signed URL
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
+          
+        if (signedData && signedData.signedUrl) {
+          return signedData.signedUrl;
+        }
+      } catch (signedError) {
+        console.warn("Error creating signed URL:", signedError);
+      }
+      
+      // Fallback method - construct URL directly
+      const directUrl = `${supabase.supabaseUrl}/storage/v1/object/public/documents/${filePath}`;
+      console.log("Using fallback direct URL:", directUrl);
+      return directUrl;
+      
+    } catch (error) {
+      console.error(`Error getting valid URL for ${filePath}:`, error);
+      
+      // Last resort fallback
+      return `${supabase.supabaseUrl}/storage/v1/object/public/documents/${filePath}`;
+    }
+  }, []);
+
   const loadUploadedFiles = useCallback(async (forceRefresh = false) => {
     if (bucketError) {
       console.error("Cannot load files due to bucket error:", bucketError);
@@ -96,35 +172,18 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         return;
       }
       
-      // Verify test upload to confirm bucket accessibility
+      // Create bucket if needed before loading files
       try {
-        const testFile = new Blob(['test'], { type: 'text/plain' });
-        const testPath = `test-${Date.now()}.txt`;
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(testPath, testFile);
-          
-        if (uploadError) {
-          console.warn("Aviso: Teste de upload falhou:", uploadError);
-          
-          if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
-            console.log("Bucket não existe ou não está acessível, tentando criar novamente...");
-            const bucketReady = await checkAndCreateBucket();
-            if (!bucketReady) {
-              console.error("Bucket not ready, cannot load files");
-              setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
-              setIsLoadingFiles(false);
-              return;
-            }
-          }
-        } else {
-          console.log("Teste de upload bem-sucedido:", uploadData);
-          // Clean up test file
-          await supabase.storage.from('documents').remove([testPath]);
+        console.log("Verificando bucket antes de carregar arquivos");
+        const bucketReady = await checkAndCreateBucket();
+        if (!bucketReady) {
+          console.error("Bucket not ready, cannot load files");
+          setBucketError("Não foi possível preparar o armazenamento. Tente novamente mais tarde.");
+          setIsLoadingFiles(false);
+          return;
         }
-      } catch (testError) {
-        console.warn("Aviso: Erro durante teste de acesso ao bucket:", testError);
+      } catch (bucketError) {
+        console.error("Error preparing bucket:", bucketError);
         // Continue anyway
       }
       
@@ -167,19 +226,12 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
       const filesWithUrls = await Promise.all(dbDocs.map(async (doc) => {
         try {
           console.log(`Obtendo URL pública para: ${doc.file_path}`);
-          const { data: urlData } = await supabase.storage
-            .from('documents')
-            .getPublicUrl(doc.file_path);
-            
-          if (!urlData || !urlData.publicUrl) {
-            console.error(`Falha ao obter URL pública para: ${doc.file_path}`);
-            throw new Error("Failed to get public URL");
-          }
+          const publicUrl = await getValidPublicUrl(doc.file_path);
           
           return {
             name: doc.filename,
             path: doc.file_path,
-            url: urlData.publicUrl,
+            url: publicUrl,
             created_at: doc.created_at
           };
         } catch (error) {
@@ -187,7 +239,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
           return {
             name: doc.filename,
             path: doc.file_path,
-            url: '#error-loading-url',
+            url: `${supabase.supabaseUrl}/storage/v1/object/public/documents/${doc.file_path}`,
             created_at: doc.created_at
           };
         }
@@ -211,7 +263,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, selectedClient, toast, uploadedFiles.length, bucketError]);
+  }, [checkAndCreateBucket, currentPage, documentType, getCacheKey, getValidPublicUrl, selectedClient, toast, uploadedFiles.length, bucketError]);
 
   const loadMoreFiles = useCallback(() => {
     if (isLoadingFiles || !hasMoreFiles) return;
