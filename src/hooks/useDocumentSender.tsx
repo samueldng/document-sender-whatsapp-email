@@ -210,15 +210,22 @@ export function useSendDocument() {
 
         console.log("Resposta do upload:", uploadResponse.data);
         const filePath = uploadResponse.data.filePath;
+        const publicUrl = uploadResponse.data.publicUrl;
         
-        // Get public URL
-        const { data } = await supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
+        // If we don't have a publicUrl from the upload, try to get it
+        let url = publicUrl;
+        if (!url) {
+          // Get public URL
+          const { data } = await supabase.storage
+            .from('documents')
+            .getPublicUrl(filePath);
 
-        if (!data || !data.publicUrl) {
-          console.error("Falha ao obter URL pública", data);
-          throw new Error('URL pública não disponível');
+          if (!data || !data.publicUrl) {
+            console.error("Falha ao obter URL pública", data);
+            throw new Error('URL pública não disponível');
+          }
+          
+          url = data.publicUrl;
         }
 
         if (method === "email") {
@@ -244,7 +251,7 @@ export function useSendDocument() {
               clientPhone: selectedClient.whatsapp,
               clientName: selectedClient.name,
               documentType,
-              publicUrl: data.publicUrl,
+              publicUrl: url,
               fileName: file.name,
             },
           });

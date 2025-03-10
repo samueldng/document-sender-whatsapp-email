@@ -41,70 +41,27 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Check if the documents bucket exists
-    console.log("Checking if documents bucket exists");
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
-    
-    if (bucketsError) {
-      console.error("Error listing buckets:", bucketsError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to check bucket existence', details: bucketsError }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-      )
-    }
-    
-    if (!buckets) {
-      console.error("Buckets response is undefined or null");
-      return new Response(
-        JSON.stringify({ error: 'Buckets response is undefined or null' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-      )
-    }
-    
-    const documentsBucket = buckets.find(bucket => bucket.name === 'documents');
-    
-    if (!documentsBucket) {
-      console.log("Documents bucket doesn't exist, creating it");
+    // Use the create-bucket function to ensure the bucket exists and is public
+    try {
+      console.log("Ensuring documents bucket exists and is public");
+      const { data: bucketResult, error: bucketError } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents', create: true }
+      });
       
-      const { data: createData, error: createError } = await supabase.storage.createBucket(
-        'documents',
-        { public: true }
-      );
-      
-      if (createError) {
-        console.error("Error creating documents bucket:", createError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to create documents bucket', details: createError }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-        )
+      if (bucketError) {
+        console.error("Error invoking create-bucket function:", bucketError);
+        throw new Error(`Failed to ensure bucket: ${bucketError.message}`);
       }
       
-      // Verify the bucket was created
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait to ensure bucket is registered
-      
-      const { data: verifyBuckets, error: verifyError } = await supabase.storage.listBuckets();
-      
-      if (verifyError) {
-        console.error("Error verifying bucket creation:", verifyError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to verify bucket creation', details: verifyError }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-        )
+      if (!bucketResult?.success) {
+        console.error("create-bucket function was unsuccessful:", bucketResult);
+        throw new Error('Failed to ensure bucket: function returned unsuccessful result');
       }
       
-      const verifiedBucket = verifyBuckets?.find(bucket => bucket.name === 'documents');
-      
-      if (!verifiedBucket) {
-        console.error("Bucket not found after creation attempt");
-        return new Response(
-          JSON.stringify({ error: 'Bucket not created successfully' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-        )
-      }
-      
-      console.log("Documents bucket created successfully:", verifiedBucket);
-    } else {
-      console.log("Documents bucket already exists:", documentsBucket);
+      console.log("Bucket check result:", bucketResult);
+    } catch (bucketCheckError) {
+      console.error("Error checking/creating bucket:", bucketCheckError);
+      // We'll try to continue with the upload anyway
     }
 
     // Sanitize filename to avoid problematic characters

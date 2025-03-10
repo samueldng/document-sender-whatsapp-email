@@ -30,6 +30,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // Ensure the documents bucket exists and is public
+    try {
+      console.log("Ensuring documents bucket exists and is public");
+      const { data: bucketResult, error: bucketError } = await supabase.functions.invoke('create-bucket', {
+        body: { bucketName: 'documents', create: true }
+      });
+      
+      if (bucketError) {
+        console.error("Error invoking create-bucket function:", bucketError);
+        throw new Error(`Failed to ensure bucket: ${bucketError.message}`);
+      }
+      
+      if (!bucketResult?.success) {
+        console.error("create-bucket function was unsuccessful:", bucketResult);
+        throw new Error('Failed to ensure bucket: function returned unsuccessful result');
+      }
+      
+      console.log("Bucket check result:", bucketResult);
+    } catch (bucketCheckError) {
+      console.error("Error checking/creating bucket:", bucketCheckError);
+      // We'll try to continue with the upload anyway
+    }
+
     // Sanitize filename and generate unique path
     const sanitizedFileName = (file as File).name.replace(/[^\x00-\x7F]/g, '')
     const fileExt = sanitizedFileName.split('.').pop()
@@ -51,6 +74,15 @@ serve(async (req) => {
       )
     }
 
+    // Get public URL for the file
+    const { data: urlData, error: urlError } = await supabase.storage
+      .from('documents')
+      .getPublicUrl(filePath);
+      
+    if (urlError) {
+      console.error('Error getting public URL:', urlError);
+    }
+
     // Save document metadata to database
     const { error: dbError } = await supabase
       .from('documents')
@@ -58,7 +90,8 @@ serve(async (req) => {
         client_id: clientId,
         filename: sanitizedFileName,
         file_path: filePath,
-        document_type: documentType
+        document_type: documentType,
+        url: urlData?.publicUrl || null
       })
 
     if (dbError) {
@@ -70,7 +103,11 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ message: 'Document uploaded successfully', filePath }),
+      JSON.stringify({ 
+        message: 'Document uploaded successfully', 
+        filePath,
+        publicUrl: urlData?.publicUrl || null 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
