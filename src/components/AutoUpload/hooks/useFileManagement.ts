@@ -6,6 +6,7 @@ import { UploadedFile } from "../FilesList";
 import { useBucketManagement } from "./useBucketManagement";
 
 const ITEMS_PER_PAGE = 10;
+const SUPABASE_URL = "https://ddmandptdqdigxsbbfcj.supabase.co";
 
 interface UseFileManagementProps {
   selectedClient: Client | null;
@@ -27,11 +28,9 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     isCheckingBucket 
   } = useBucketManagement();
 
-  // Check bucket on component mount
   useEffect(() => {
     const initializeBucket = async () => {
       try {
-        // Try creating the bucket directly first - most reliable
         try {
           console.log("Tentando criar bucket documents diretamente");
           const { error: createError } = await supabase.storage.createBucket('documents', {
@@ -55,7 +54,6 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
           // Continue to next approach
         }
         
-        // Check if bucket exists using our utility
         const bucketExists = await checkBucketExists();
         
         if (!bucketExists) {
@@ -95,16 +93,13 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
     }
   }, [getCacheKey]);
 
-  // Helper function to get a valid public URL
   const getValidPublicUrl = useCallback(async (filePath: string) => {
     try {
-      // First method - standard getPublicUrl
       const { data: urlData } = await supabase.storage
         .from('documents')
         .getPublicUrl(filePath);
         
       if (urlData && urlData.publicUrl) {
-        // Verify URL is accessible
         try {
           const checkResponse = await fetch(urlData.publicUrl, { 
             method: 'HEAD',
@@ -121,7 +116,6 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         }
       }
       
-      // Second method - try signed URL
       try {
         const { data: signedData } = await supabase.storage
           .from('documents')
@@ -134,16 +128,14 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         console.warn("Error creating signed URL:", signedError);
       }
       
-      // Fallback method - construct URL directly
-      const directUrl = `${supabase.supabaseUrl}/storage/v1/object/public/documents/${filePath}`;
+      const directUrl = `${SUPABASE_URL}/storage/v1/object/public/documents/${filePath}`;
       console.log("Using fallback direct URL:", directUrl);
       return directUrl;
       
     } catch (error) {
       console.error(`Error getting valid URL for ${filePath}:`, error);
       
-      // Last resort fallback
-      return `${supabase.supabaseUrl}/storage/v1/object/public/documents/${filePath}`;
+      return `${SUPABASE_URL}/storage/v1/object/public/documents/${filePath}`;
     }
   }, []);
 
@@ -172,7 +164,6 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
         return;
       }
       
-      // Create bucket if needed before loading files
       try {
         console.log("Verificando bucket antes de carregar arquivos");
         const bucketReady = await checkAndCreateBucket();
@@ -239,7 +230,7 @@ export function useFileManagement({ selectedClient, documentType }: UseFileManag
           return {
             name: doc.filename,
             path: doc.file_path,
-            url: `${supabase.supabaseUrl}/storage/v1/object/public/documents/${doc.file_path}`,
+            url: `${SUPABASE_URL}/storage/v1/object/public/documents/${doc.file_path}`,
             created_at: doc.created_at
           };
         }

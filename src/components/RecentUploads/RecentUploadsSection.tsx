@@ -7,6 +7,9 @@ import { ptBR } from "date-fns/locale";
 import { FileIcon, ExternalLinkIcon, LoaderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Define the Supabase URL directly from the environment or hardcode it since it's public
+const SUPABASE_URL = "https://ddmandptdqdigxsbbfcj.supabase.co";
+
 interface RecentUpload {
   id: string;
   filename: string;
@@ -42,7 +45,20 @@ export function RecentUploadsSection({
         console.error("Erro ao carregar uploads recentes:", error);
         setError("Não foi possível carregar os uploads recentes");
       } else {
-        setRecentUploads(data as RecentUpload[]);
+        // Transform data to include urls
+        const uploadsWithUrls = await Promise.all((data || []).map(async (doc) => {
+          // Get public URL for file
+          const { data: urlData } = await supabase.storage
+            .from('documents')
+            .getPublicUrl(doc.file_path);
+            
+          return {
+            ...doc,
+            url: urlData?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/documents/${doc.file_path}`
+          } as RecentUpload;
+        }));
+        
+        setRecentUploads(uploadsWithUrls);
         setError(null);
       }
     } catch (err) {
