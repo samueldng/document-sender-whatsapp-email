@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,7 +7,6 @@ import { FileIcon, ExternalLinkIcon, LoaderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
-// Define the Supabase URL directly from the environment or hardcode it since it's public
 const SUPABASE_URL = "https://ddmandptdqdigxsbbfcj.supabase.co";
 
 interface RecentUpload {
@@ -37,7 +35,7 @@ export function RecentUploadsSection({
   const loadRecentUploads = async () => {
     setIsLoading(true);
     try {
-      console.log("Carregando uploads recentes...");
+      console.log("[RecentUploads] Iniciando carregamento de uploads...");
       const { data, error } = await supabase
         .from('documents')
         .select('*')
@@ -45,13 +43,12 @@ export function RecentUploadsSection({
         .limit(maxItems);
 
       if (error) {
-        console.error("Erro ao carregar uploads recentes:", error);
+        console.error("[RecentUploads] Erro ao carregar uploads:", error);
         setError("Não foi possível carregar os uploads recentes");
       } else {
-        console.log("Dados obtidos do Supabase:", data);
-        // Transform data to include urls
+        console.log("[RecentUploads] Documentos obtidos:", data);
+        
         const uploadsWithUrls = await Promise.all((data || []).map(async (doc) => {
-          // Get public URL for file
           const { data: urlData } = await supabase.storage
             .from('documents')
             .getPublicUrl(doc.file_path);
@@ -62,80 +59,57 @@ export function RecentUploadsSection({
           } as RecentUpload;
         }));
         
-        console.log("Uploads com URLs:", uploadsWithUrls);
+        console.log("[RecentUploads] Documentos com URLs:", uploadsWithUrls);
         setRecentUploads(uploadsWithUrls);
         setError(null);
       }
     } catch (err) {
-      console.error("Erro inesperado:", err);
+      console.error("[RecentUploads] Erro inesperado:", err);
       setError("Ocorreu um erro inesperado");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Carrega uploads recentes ao montar o componente e configura realtime
   useEffect(() => {
-    // Carrega uploads iniciais
     loadRecentUploads();
     
-    console.log("Configurando canal realtime para a tabela documents...");
+    console.log("[RecentUploads] Configurando canal realtime...");
     
-    // Configura um canal realtime para atualizar quando novos documentos forem adicionados
     const channel = supabase
       .channel('documents-changes')
       .on('postgres_changes', 
         { 
-          event: 'INSERT', 
+          event: '*', 
           schema: 'public', 
-          table: 'documents' 
+          table: 'documents'
         }, 
-        (payload) => {
-          console.log('Novo documento inserido:', payload);
-          toast({
-            title: "Novo documento",
-            description: "Um novo documento foi adicionado",
-          });
-          loadRecentUploads();
-        }
-      )
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'documents' 
-        }, 
-        (payload) => {
-          console.log('Documento atualizado:', payload);
-          loadRecentUploads();
-        }
-      )
-      .on('postgres_changes', 
-        { 
-          event: 'DELETE', 
-          schema: 'public', 
-          table: 'documents' 
-        }, 
-        (payload) => {
-          console.log('Documento removido:', payload);
-          loadRecentUploads();
+        async (payload) => {
+          console.log('[RecentUploads] Mudança detectada:', payload);
+          
+          await loadRecentUploads();
+          
+          if (payload.eventType === 'INSERT') {
+            toast({
+              title: "Novo documento",
+              description: "Um novo documento foi adicionado",
+            });
+          }
         }
       )
       .subscribe((status) => {
-        console.log('Status do canal de realtime:', status);
+        console.log('[RecentUploads] Status do canal:', status);
         if (status === 'SUBSCRIBED') {
-          console.log('Subscrito com sucesso aos eventos da tabela documents');
+          console.log('[RecentUploads] Inscrição realtime ativa');
         }
       });
-    
-    // Limpa o canal ao desmontar
+
     return () => {
-      console.log('Removendo canal de realtime');
+      console.log('[RecentUploads] Limpando canal realtime');
       supabase.removeChannel(channel);
     };
   }, [maxItems, toast]);
 
-  // Formata o tipo de documento para exibição
   const formatDocumentType = (type: string) => {
     const types: Record<string, string> = {
       'invoice': 'Fatura',
