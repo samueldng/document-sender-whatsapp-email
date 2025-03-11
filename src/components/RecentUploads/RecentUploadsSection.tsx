@@ -37,6 +37,7 @@ export function RecentUploadsSection({
   const loadRecentUploads = async () => {
     setIsLoading(true);
     try {
+      console.log("Carregando uploads recentes...");
       const { data, error } = await supabase
         .from('documents')
         .select('*')
@@ -47,6 +48,7 @@ export function RecentUploadsSection({
         console.error("Erro ao carregar uploads recentes:", error);
         setError("Não foi possível carregar os uploads recentes");
       } else {
+        console.log("Dados obtidos do Supabase:", data);
         // Transform data to include urls
         const uploadsWithUrls = await Promise.all((data || []).map(async (doc) => {
           // Get public URL for file
@@ -60,6 +62,7 @@ export function RecentUploadsSection({
           } as RecentUpload;
         }));
         
+        console.log("Uploads com URLs:", uploadsWithUrls);
         setRecentUploads(uploadsWithUrls);
         setError(null);
       }
@@ -71,9 +74,12 @@ export function RecentUploadsSection({
     }
   };
 
-  // Carrega uploads recentes ao montar o componente
+  // Carrega uploads recentes ao montar o componente e configura realtime
   useEffect(() => {
+    // Carrega uploads iniciais
     loadRecentUploads();
+    
+    console.log("Configurando canal realtime para a tabela documents...");
     
     // Configura um canal realtime para atualizar quando novos documentos forem adicionados
     const channel = supabase
@@ -127,7 +133,7 @@ export function RecentUploadsSection({
       console.log('Removendo canal de realtime');
       supabase.removeChannel(channel);
     };
-  }, [maxItems]);
+  }, [maxItems, toast]);
 
   // Formata o tipo de documento para exibição
   const formatDocumentType = (type: string) => {
