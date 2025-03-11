@@ -22,6 +22,8 @@ export function useRecentUploads(maxItems: number = 5) {
 
   const loadRecentUploads = async () => {
     setIsLoading(true);
+    setError(null);
+    
     try {
       console.log("[useRecentUploads] Carregando uploads recentes...");
       
@@ -35,6 +37,7 @@ export function useRecentUploads(maxItems: number = 5) {
       if (error) {
         console.error("[useRecentUploads] Erro ao buscar documentos:", error);
         setError("Não foi possível carregar os uploads recentes");
+        setIsLoading(false);
         return;
       }
 
@@ -43,7 +46,7 @@ export function useRecentUploads(maxItems: number = 5) {
       if (!data || data.length === 0) {
         console.log("[useRecentUploads] Nenhum documento encontrado");
         setRecentUploads([]);
-        setError(null);
+        setIsLoading(false);
         return;
       }
 
@@ -61,7 +64,6 @@ export function useRecentUploads(maxItems: number = 5) {
       
       console.log("[useRecentUploads] Documentos com URLs:", uploadsWithUrls);
       setRecentUploads(uploadsWithUrls);
-      setError(null);
     } catch (err) {
       console.error("[useRecentUploads] Erro inesperado:", err);
       setError("Ocorreu um erro inesperado");
@@ -78,7 +80,7 @@ export function useRecentUploads(maxItems: number = 5) {
     
     // Set up realtime subscription for the documents table
     const channel = supabase
-      .channel('documents-changes')
+      .channel('document-changes')
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -88,22 +90,19 @@ export function useRecentUploads(maxItems: number = 5) {
         (payload) => {
           console.log('[useRecentUploads] Mudança detectada:', payload);
           
+          // Reload the data when changes are detected
+          loadRecentUploads();
+          
           if (payload.eventType === 'INSERT') {
             toast({
               title: "Novo documento",
               description: "Um novo documento foi adicionado",
             });
           }
-          
-          // Reload the data when changes are detected
-          loadRecentUploads();
         }
       )
       .subscribe((status) => {
         console.log('[useRecentUploads] Status do canal:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('[useRecentUploads] Inscrição realtime ativa');
-        }
       });
 
     // Clean up on unmount

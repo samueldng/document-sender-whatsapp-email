@@ -37,7 +37,7 @@ export function RecentUploadsSection({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={loadRecentUploads}
+            onClick={() => loadRecentUploads()}
             disabled={isLoading}
           >
             <LoaderIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
