@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { FileIcon, ExternalLinkIcon, LoaderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 // Define the Supabase URL directly from the environment or hardcode it since it's public
 const SUPABASE_URL = "https://ddmandptdqdigxsbbfcj.supabase.co";
@@ -31,6 +32,7 @@ export function RecentUploadsSection({
   const [recentUploads, setRecentUploads] = useState<RecentUpload[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const loadRecentUploads = async () => {
     setIsLoading(true);
@@ -75,22 +77,54 @@ export function RecentUploadsSection({
     
     // Configura um canal realtime para atualizar quando novos documentos forem adicionados
     const channel = supabase
-      .channel('public:documents')
+      .channel('documents-changes')
       .on('postgres_changes', 
         { 
-          event: '*', 
+          event: 'INSERT', 
           schema: 'public', 
           table: 'documents' 
         }, 
-        () => {
-          // Recarrega os uploads quando houver qualquer mudança na tabela documents
+        (payload) => {
+          console.log('Novo documento inserido:', payload);
+          toast({
+            title: "Novo documento",
+            description: "Um novo documento foi adicionado",
+          });
           loadRecentUploads();
         }
       )
-      .subscribe();
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'documents' 
+        }, 
+        (payload) => {
+          console.log('Documento atualizado:', payload);
+          loadRecentUploads();
+        }
+      )
+      .on('postgres_changes', 
+        { 
+          event: 'DELETE', 
+          schema: 'public', 
+          table: 'documents' 
+        }, 
+        (payload) => {
+          console.log('Documento removido:', payload);
+          loadRecentUploads();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Status do canal de realtime:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Subscrito com sucesso aos eventos da tabela documents');
+        }
+      });
     
     // Limpa o canal ao desmontar
     return () => {
+      console.log('Removendo canal de realtime');
       supabase.removeChannel(channel);
     };
   }, [maxItems]);

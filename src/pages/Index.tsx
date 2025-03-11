@@ -3,6 +3,7 @@ import { DocumentSenderProvider } from "@/contexts/DocumentSenderContext";
 import { ClientSection } from "@/components/DocumentSender/ClientSection";
 import { DocumentsSection } from "@/components/DocumentSender/DocumentsSection";
 import { RecentUploadsSection } from "@/components/RecentUploads/RecentUploadsSection";
+import { Toaster } from "@/components/ui/toaster";
 
 export default function Index() {
   return (
@@ -17,6 +18,7 @@ export default function Index() {
           <DocumentsSection />
         </div>
       </div>
+      <Toaster />
     </DocumentSenderProvider>
   );
 }
